@@ -1,0 +1,51 @@
+name: proofs
+
+on:
+  push:
+    paths: ["crates/**", "proofs/**", ".omp/skills/verus-proof/**", ".github/workflows/proofs.yml"]
+  pull_request:
+    paths: ["crates/**", "proofs/**", ".omp/skills/verus-proof/**", ".github/workflows/proofs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version and release-zip sha256 come from proofs/verus.env only.
+      - name: Install pinned Verus
+        run: |
+          set -euo pipefail
+          verus=$(./proofs/install-verus.sh "$RUNNER_TEMP")
+          echo "VERUS=$verus" >> "$GITHUB_ENV"
+          echo "$(dirname "$verus")" >> "$GITHUB_PATH"
+          "$verus" --version
+
+      - name: Toolchain for the Lynette gate
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build pinned Lynette gate
+        run: |
+          set -euo pipefail
+          ./proofs/lynette-setup.sh
+          echo "LYNETTE=$(cd proofs/../.. && pwd)/tools/Lynette/target/release/lynette" >> "$GITHUB_ENV"
+
+      # Blocks on: source drift, changed frozen pair without a manifest update,
+      # candidate exec-surface changes, a failing Verus/Lynette/trust gate.
+      - name: Proof gates
+        run: ./proofs/run-gates.sh
+
+      - name: Upload gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-logs
+          path: proofs/logs/
+          if-no-files-found: warn

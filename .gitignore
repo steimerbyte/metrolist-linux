@@ -1,0 +1,53 @@
+# Build output
+/target
+/build
+/dist
+
+# Local-only cargo tuning: the host's .cargo/config.toml pins an absolute
+# rustc-wrapper. The tracked template is .cargo/config.toml.example.
+/.cargo/config.toml
+
+# Release artifacts
+*.AppImage
+
+# Fetched AppImage tooling, sha-pinned by packaging/download-tools.sh
+/packaging/tools
+
+# Agent tooling and generated proof-gate logs
+/.omp
+/proofs/logs
+
+# Unused 15 MB duplicate; crates/ui/src/theme/fonts.rs includes ../../assets/fonts
+/crates/ui/assets/fonts
+
+# Signed-in account captures: private review evidence, never published
+/docs/ui-*-live*.png
+/docs/audit/live-*
+
+# Runtime state and credentials (never commit)
+/settings.json
+*.db
+*.db-wal
+*.db-shm
+/cookies.txt
+*cookie*.txt
+*cookie*.json
+session-cookies*
+secrets.json
+lastfm-queue.jsonl
+*.session
+.env
+.env.*
+
+# Upstream Android tree is read-only and not vendored
+/metrolist
+
+# Editor and temp artifacts
+**/*.rs.bk
+*.pdb
+.DS_Store
+.idea/
+.vscode/
+*.tmp
+*.swp
+*~

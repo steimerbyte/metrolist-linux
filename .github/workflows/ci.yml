@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Check, test, package
+    runs-on: ubuntu-24.04
+    container: rust:1.99.1-bookworm
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_BUILD_JOBS: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build/runtime test deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl pkg-config libasound2-dev desktop-file-utils \
+            mpv binutils
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Check
+        run: cargo check --workspace --locked
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Build release (glibc 2.36 floor)
+        run: cargo build --release --locked
+
+      - name: Fetch pinned AppImage tools
+        run: packaging/download-tools.sh
+
+      - name: Build AppImage
+        run: |
+          packaging/bundle-mpv.sh --mpv /usr/bin/mpv --out "$PWD/build/mpv-bundle"
+          MPV_BUNDLE="$PWD/build/mpv-bundle" MPV_BUNDLE_REUSE=1 \
+            packaging/build-appimage.sh --no-build
+
+      - name: Verify AppImage structure and checksum
+        run: |
+          test -x dist/Metrolist-Desktop-*.AppImage
+          cd dist && sha256sum -c SHA256SUMS
+          ./Metrolist-Desktop-*.AppImage --appimage-extract >/dev/null
+          test -x squashfs-root/usr/bin/metrolist
+          test -x squashfs-root/usr/bin/mpv
+          test -f squashfs-root/usr/share/metrolist/assets/i18n/en.json
+          test -f squashfs-root/usr/share/licenses/metrolist-desktop/mpv/PROVENANCE.txt
+          LD_LIBRARY_PATH="$PWD/squashfs-root/usr/lib/metrolist/mpv" \
+            squashfs-root/usr/lib/metrolist/mpv/mpv --version
+          echo "app GLIBC max: $(objdump -T squashfs-root/usr/bin/metrolist | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+          echo "mpv GLIBC max: $(objdump -T squashfs-root/usr/lib/metrolist/mpv/mpv | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+
+      - name: Upload AppImage and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrolist-desktop-appimage
+          path: |
+            dist/*.AppImage
+            dist/SHA256SUMS
+          if-no-files-found: error

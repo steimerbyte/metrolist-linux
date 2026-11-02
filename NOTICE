@@ -1,0 +1,66 @@
+Metrolist Linux
+===============
+
+Metrolist Linux is an unofficial, community-made desktop port of Metrolist,
+the Android YouTube Music client. It is not affiliated with, endorsed by, or
+sponsored by the Metrolist project, Google LLC, or YouTube.
+
+Upstream project
+----------------
+Metrolist (Android)
+https://github.com/MetrolistGroup/Metrolist
+Copyright (C) Metrolist contributors
+Licensed under the GNU General Public License, version 3 only (GPL-3.0-only).
+
+This port is a derivative work of the upstream Android source. It is
+distributed under the same license, GPL-3.0-only. The complete license text is
+in LICENSE; no "or later" option is granted. Upstream source is available at
+the URL above; the port's own source must be offered under GPL-3.0-only.
+
+Bundled assets
+--------------
+- Roboto Regular/Medium/Bold (assets/fonts/): Copyright 2011 Google Inc.
+  SIL Open Font License 1.1, assets/fonts/OFL-1.1-Roboto.txt.
+- Material Symbols Rounded (assets/fonts/): Copyright Google LLC.
+  Apache License 2.0, assets/fonts/Apache-2.0-MaterialSymbols.txt.
+- Translations (assets/i18n/): derived from the upstream Metrolist Android
+  resources and therefore covered by GPL-3.0-only.
+- Application icons (assets/icons/): original artwork created for this port,
+  not the upstream Metrolist logo or other upstream artwork.
+
+Rust dependencies with embedded data
+------------------------------------
+- `kakasi` 0.1.0 (GPL-3.0): Japanese kanji/kana readings; its 1.4 MiB dictionary
+  is compiled into the binary. The crate is a port of pykakasi
+  (Copyright (C) 2010-2021 Hiroshi Miura and contributors), whose dictionaries
+  come from the original kakasi project (GPL-2.0, Copyright (C) 1992-1994
+  Hironobu Takahashi and others). The crate is licensed GPL-3.0 (only), the same
+  licence as this project, so the combined work stays GPL-3.0-only and the text
+  in LICENSE covers it.
+- `pinyin` 0.11.0 (MIT): Hanzi → pinyin table from mozillazg/pinyin-data (MIT).
+
+Bundled audio backend
+---------------------
+The AppImage bundles mpv 0.35.1 and its non-system shared libraries under
+usr/lib/metrolist/mpv/. mpv is licensed GPL-2.0-or-later; the Debian bookworm
+build's FFmpeg libraries are LGPL-2.1-or-later, libass is ISC, and libplacebo
+is LGPL-2.1-or-later. Copyright files and a generated PROVENANCE.txt are in
+usr/share/licenses/metrolist-desktop/mpv/. Additional bundled libraries (codec
+and container libraries pulled in by FFmpeg) keep their Debian package
+copyright files in the same directory.
+
+Source: https://github.com/mpv-player/mpv (mpv)
+        https://ffmpeg.org/ (FFmpeg)
+        https://github.com/libass/libass (libass)
+        https://code.videolan.org/videolan/libplacebo (libplacebo)
+
+The host's mpv 0.41 is not used in the released AppImage: it requires
+GLIBC_2.38 and FFmpeg 7, while this AppImage targets the Debian 12/Ubuntu 24.04
+GLIBC_2.36 floor. The bundled mpv is a separate executable, not linked into
+Metrolist; the app talks to it over its JSON IPC socket.
+
+Trademarks
+----------
+"Metrolist", "YouTube", "YouTube Music", "Google", "Android" and related marks
+are trademarks of their respective owners. This project uses the Metrolist
+name only to describe the upstream project it ports.

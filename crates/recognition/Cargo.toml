@@ -1,0 +1,22 @@
+[package]
+name = "ml-recognition"
+description = "Audio recognition (fingerprinting and microphone capture)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+cpal.workspace = true
+hound.workspace = true
+
+[dev-dependencies]
+# Only used by the golden test to cross-check the Kotlin-exact FFT is a real DFT.
+rustfft.workspace = true

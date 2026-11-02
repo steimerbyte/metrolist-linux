@@ -1,0 +1,309 @@
+# Metrolist Linux
+
+An **unofficial** native Linux port of
+[Metrolist](https://github.com/MetrolistGroup/Metrolist), the GPL-3.0-only
+YouTube Music client for Android: a Material 3 egui/eframe desktop app with an
+InnerTube (WEB_REMIX) client, SQLite library, offline downloads, mpv playback
+and MPRIS/tray integration. Not affiliated with, endorsed by or sponsored by
+the upstream project or Google.
+
+The upstream Android source (version 13.7.0) is a separate, read-only checkout
+and is **not** part of this crate graph.
+
+## Features
+
+- **Playback** — unauthenticated stream resolution over the VISIONOS client
+  (no PO token needed) with ranged transfers, mpv JSON-IPC engine, gapless
+  prefetch, shuffle/repeat/radio queue, 10-band EQ presets, speed, sleep timer,
+  output device selection, Auto/Low/High quality.
+- **Library** — liked songs, library membership, songs/albums/artists/
+  playlists/downloads/history tabs, local playlist editing (create, rename,
+  delete, add, remove, reorder), local play history.
+- **Discovery** — live home feed with chips and continuations, search with
+  suggestions and filters, album, artist and online playlist pages.
+- **Catalog & stats** — charts, moods/genres, new releases, podcast browsing,
+  song recognition from the search app bar, and Stats/Wrapped over local
+  history.
+- **Together** — Listen Together rooms: create/join by code, host approval,
+  host-driven transport, guest sync that follows the room's current track.
+- **Offline** — manifest-backed download queue with progress, retry, cancel,
+  storage budget; a verified download plays without the network.
+- **Lyrics** — LRCLIB (default) and KuGou providers, LRC/TTML parsing with word
+  timings, agents, background lines and offsets; Cyrillic romanisation is
+  implemented and tested, though the lyric view still renders provider text
+  verbatim.
+- **Desktop** — MPRIS, StatusNotifierItem tray, now-playing notifications,
+  single instance with `metrolist://play?v=…` forwarding.
+- **Integrations** — optional Last.fm scrobbling (session or username/password
+  login, credentials in `${data_dir}/secrets.json`, mode 0600) and Discord Rich
+  Presence (feature-gated, off by default). Browser-cookie account import into
+  the account screen, read-only.
+- **Theme** — Material 3 roles from `material-colors` (SPEC_2025/TonalSpot),
+  System/Light/Dark/Pure black, seed colour presets and picker, responsive
+  compact (`< 840 dp`) and expanded shells.
+
+`docs/PARITY.md` is the honest per-feature matrix (Done / Partial / Not ported /
+N/A), with the exact evidence for each row and the limits of every partial.
+
+## Screenshots
+
+Captured from the running app with `--screenshot` (see *CI / capture modes*)
+against demo data, signed out. Each thumbnail links to the full-resolution
+1100×760 frame.
+
+| | | | |
+|---|---|---|---|
+| [<img src="docs/ui-lyrics-1100.png" width="200" alt="Lyrics">](docs/ui-lyrics-1100.png) | [<img src="docs/ui-charts-1100.png" width="200" alt="Charts">](docs/ui-charts-1100.png) | [<img src="docs/ui-moods-1100.png" width="200" alt="Moods and genres">](docs/ui-moods-1100.png) | [<img src="docs/ui-new-releases-1100.png" width="200" alt="New releases">](docs/ui-new-releases-1100.png) |
+| Lyrics | Charts | Moods and genres | New releases |
+| [<img src="docs/ui-podcasts-1100.png" width="200" alt="Podcasts">](docs/ui-podcasts-1100.png) | [<img src="docs/ui-stats-1100.png" width="200" alt="Stats">](docs/ui-stats-1100.png) | [<img src="docs/ui-wrapped-1100.png" width="200" alt="Wrapped">](docs/ui-wrapped-1100.png) | [<img src="docs/ui-recognition-success-1100.png" width="200" alt="Recognition">](docs/ui-recognition-success-1100.png) |
+| Podcasts | Stats | Wrapped | Recognition |
+| [<img src="docs/ui-together-1100.png" width="200" alt="Listen together">](docs/ui-together-1100.png) | [<img src="docs/ui-integrations-1100.png" width="200" alt="Integrations">](docs/ui-integrations-1100.png) | [<img src="docs/ui-settings-audio-1100.png" width="200" alt="Settings, audio">](docs/ui-settings-audio-1100.png) | [<img src="docs/ui-account-1100.png" width="200" alt="Account">](docs/ui-account-1100.png) |
+| Listen together | Integrations | Settings (audio) | Account (signed out) |
+
+## Status
+
+| Layer | State |
+|---|---|
+| `ml-core` | Models, queue state machine, settings, events, utilities + tests |
+| `ml-ui` | M3 theme, custom widgets, responsive shell, live Home/Search/Album/Artist/Playlist/Library/Settings/player/queue/lyrics screens plus catalog (charts, moods, new releases, podcasts), stats/Wrapped, recognition, Listen Together and integrations |
+| `ml-innertube` | Live unauthenticated WEB_REMIX browse/search/album/artist/playlist/`next` client; VISIONOS player/stream path needs no PO token. Read-only browser-cookie session discovery exists; OAuth/WebView login and the PO-token (BotGuard) route are not implemented. |
+| `ml-lyrics` | LRCLIB + KuGou wired; LyricsPlus/BetterLyrics/Paxsenix/Zemer refuse with typed errors; LRC/TTML parsing; Macedonian Cyrillic romanisation (other Cyrillic languages return `MlError::Unimplemented`), Japanese/Korean/Chinese/Hindi romanisation implemented |
+| `ml-store` | SQLite schema v1 forward migrations, typed CRUD for library/likes/history/playlists/queue/settings |
+| `ml-downloads` | Manifest-backed offline download manager with bounded workers, progress, retry/remove, storage budget |
+| `ml-audio` | mpv JSON IPC engine + queue-aware controller; seek, volume, EQ, speed, device and sleep timer verified live |
+| `ml-integrations` | MPRIS, tray, now-playing notifications, single-instance forwarding, optional Discord presence (feature-gated, off) |
+
+No shipped path calls `todo!()`/`unimplemented!()`. Lyrics romanisation returns
+`MlError::Unimplemented` only for Cyrillic languages other than Macedonian; the
+AI translation stub returns `MlError::Unavailable`. Both fail loudly instead of
+producing half-converted text. See `docs/ARCHITECTURE.md` for the frozen
+interfaces and per-workstream ownership.
+
+## AppImage
+
+`dist/Metrolist-Desktop-0.1.0-x86_64.AppImage` — 120,732,152 bytes (115.1 MiB),
+AppImage type 2 (runtime commit `fedfad5`), built in `rust:1.99.1-bookworm`
+from the frozen tree in `docs/SOURCE-FREEZE.sha256` (246 files, self-sha256
+`42e7c399…`).
+
+```text
+sha256  b4b493874982982c7c4f8a7d81b20f4626865ae91e094111a610484dafc088ba
+```
+
+```sh
+cd dist && sha256sum -c SHA256SUMS
+# Metrolist-Desktop-0.1.0-x86_64.AppImage: OK
+```
+
+```sh
+chmod +x dist/Metrolist-Desktop-*-x86_64.AppImage
+./dist/Metrolist-Desktop-*-x86_64.AppImage
+# or install it for the desktop (the layout used for release verification):
+mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.0-x86_64.AppImage \
+  ~/AppImages/metrolist_desktop.appimage && chmod 755 ~/AppImages/metrolist_desktop.appimage
+```
+
+AppImage type 2 normally needs FUSE. Without it:
+
+```sh
+./dist/Metrolist-Desktop-*-x86_64.AppImage --appimage-extract-and-run
+# or
+APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Metrolist-Desktop-*-x86_64.AppImage
+```
+
+If Wayland/EGL is broken on a driver, force X11:
+`env -u WAYLAND_DISPLAY ./dist/Metrolist-Desktop-*-x86_64.AppImage`.
+
+Portability: the app binary needs at most **GLIBC_2.35** and the bundled mpv
+0.35.1 at most **GLIBC_2.34**, both within the Debian 12 / Ubuntu 24.04
+`GLIBC_2.36` floor. mpv and its non-system libraries are bundled; the host
+graphics/audio stack is not. Only `assets/i18n/en.json` is shipped.
+
+The full artifact record (container binary hash, mpv bundle, GLIBC floors,
+host-library list) is in `dist/SNAPSHOT.txt`; build, bundling and runtime
+dependency details are in `docs/BUILD.md` and `packaging/README.md`.
+
+## Verification
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **702 passed, 0 failed, 30 ignored** |
+| Verus proofs (`proofs/run-gates.sh`) | **12 proof sets, 274 functions verified, 0 errors** (frozen `a561191c…`, gate `7a9f0f1f…`) |
+| Independent proof review | **ACCEPT** of the full gate — 12/12 pairs, 274 functions, token-lexer `spec_guard` (`proofs/REVIEW.md`) |
+| `cargo fmt`/`check`/`clippy`/`build --release` | pass; re-run after the shutdown/leak fix |
+| `./proofs/check-drift.sh` | no source drift (21 declared sources match) |
+| `metrolist --smoke 120` | `SMOKE_OK frames=120 backend=Vulkan` |
+| AppImage smoke (`--smoke 120`) | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` in a clean environment on Wayland and via `--appimage-extract-and-run`; screenshot at 405×900 |
+| AppImage playback (bundled mpv, muted) | mpv JSON IPC on the demo track: `mute=yes volume=0 ao=null`, opus, position 3.956/3600.02 s |
+| Shutdown / leak checks | 0 mpv processes, 0 engine sockets and 0 instance socket after smoke, screenshot and SIGTERM (68 ms); SIGKILL leaves 0 children and the next launch sweeps stale sockets |
+| Installed copy (`~/AppImages/metrolist_desktop.appimage`, 755) | same size and sha256; clean-env smoke 0/0/0 leaks |
+| `sha256sum -c dist/SHA256SUMS` | `Metrolist-Desktop-0.1.0-x86_64.AppImage: OK` |
+
+The 30 ignored tests are the live ones that need mpv, D-Bus/tray/notification
+services, the single-instance socket or the network.
+
+Evidence and full logs: `docs/RELEASE-CHECK.md` (gate commands, per-package
+counts, binary hash), `docs/PROOFS.md` (what each proof covers, the independent
+review and its honest limits), `docs/TEST-PARITY.md` (53 upstream Kotlin test
+files / 235 tests mapped to Rust requirements), `proofs/logs/`, and
+`dist/SNAPSHOT.txt` + `docs/BUILD.md` for the AppImage.
+
+The proof gate proves the **frozen model**, not the binary: each area transcribes
+a slice of the source into `original.rs`, and only `candidate.rs` is verified.
+`REVIEW.md` remains an independent sign-off record, not a proof — a prover who
+edits the gate scripts (including `review-check.sh` and the record) can make any
+candidate pass and recompute both hashes, so the record only asserts that these
+exact gate bytes and freeze manifest were present when it was signed. Each
+`SOURCE.md` is a hand transcription: an internally consistent wrong
+transcription would verify, because the drift hashes pin the revision, not the
+semantic fidelity. The real controls are CI on the pinned toolchain and a fresh
+reviewer after any gate change.
+
+## Known gaps
+
+Not a 100 % port. `docs/PARITY.md` is the per-feature matrix; the limits that
+matter for a release are:
+
+- **Account**: browser-cookie import only (Netscape/header format, read-only
+  session discovery). It needs a *fresh* browser session — an expired cookie
+  snapshot is rejected instead of half-loading a library. No OAuth/WebView
+  login, and no live account session was verified during this release, so
+  library sync, remote history reporting and Premium-only paths are unproven.
+- **Integrations**: Last.fm scrobbling and Discord Rich Presence are covered by
+  unit and fake-socket tests only; neither was run against a live account or a
+  running Discord client.
+- **Listen Together**: room core (create/join, host approval, host-driven
+  transport, guest sync) works; guest queue suggestions and explicit host
+  transfer are not ported.
+- **i18n**: 55 translated overlays ship in `assets/i18n/` but no code reads
+  them yet and only `en.json` is bundled in the AppImage — the UI is English.
+- **Downloads** have no byte-level resume (an interrupted transfer restarts at
+  byte 0) and offline cover art falls back to the scheme placeholder on a cold
+  start.
+- Not ported: backup/import/export, updater/changelog, hide-explicit /
+  hide-video-song filters, dynamic desktop accent colour, Automix, lyrics
+  cache wiring, Android Auto/widgets/Cast/alarms (MPRIS + tray replace them).
+- Partial by design: EQ surface, loudness (manual gain only), library
+  sort/search, podcast subscriptions, generic YouTube browse.
+
+## Toolchain
+
+Pinned in `rust-toolchain.toml`: **Rust 1.99.1 stable**.
+
+Why not 1.95.0: `material-colors 0.5.0` declares `rust-version = 1.97.0`, so
+Cargo refuses it on 1.95 (observed: `rustc 1.95.0 is not supported by …
+material-colors@0.5.0 requires rustc 1.97.0`). The AppImage container is
+therefore `rust:1.99.1-bookworm` (glibc 2.36 floor); a host `stable` build is
+1.99.1 and is what is tested here.
+
+## Build, run, verify
+
+```sh
+cargo fmt --all
+cargo check --workspace
+cargo test --workspace
+cargo run -p ml-ui --bin metrolist
+```
+
+For a single-core local build copy `.cargo/config.toml.example` to
+`.cargo/config.toml` (gitignored). The repo ships no `rustc-wrapper`: that path
+must be absolute and therefore host-specific (`docs/BUILD.md`). CI sets
+`CARGO_BUILD_JOBS=1`.
+
+The UI renders through wgpu/Vulkan (observed on the probe host:
+`backend=Vulkan adapter="Intel(R) Iris(R) Xe Graphics (RPL-U)"`). A Wayland or
+X11 session with a working GPU driver is required; this is not a headless app.
+
+### CI / capture modes
+
+```sh
+# Open a window, render N frames (default 120), exit 0
+cargo run -p ml-ui --bin metrolist -- --smoke
+# -> SMOKE_OK frames=120 backend=Vulkan home_sections=2
+
+# Framebuffer screenshot (window size defaults to 405x900)
+cargo run -p ml-ui --bin metrolist -- --screenshot docs/ui-home.png 405 900
+cargo run -p ml-ui --bin metrolist -- --screenshot docs/ui-wide.png 1100 760
+
+# Deterministic demo state for a screen
+cargo run -p ml-ui --bin metrolist -- --screenshot docs/ui-player.png \
+    405 900 --demo player
+```
+
+`--demo` accepts `player|queue|lyrics|library|settings|history|liked|downloads`.
+`--screenshot` requests an eframe framebuffer capture after fonts/textures
+settle, writes a PNG and exits 0. Capture uses `Context::request_screenshot`,
+not the compositor: GNOME Shell does not implement `wlr-screencopy`/grim on
+this host.
+
+Keyboard: `Space` play/pause, `Esc` back/close, `Ctrl+1..4` tabs, `/` search,
+`←`/`→` seek 5 s, `↑`/`↓` volume, `M` mute, `S` shuffle, `R` repeat.
+
+## Layout
+
+```text
+crates/core          ml-core      models, queue, settings, events, utils
+crates/innertube     ml-innertube WEB_REMIX client, parsers, stream resolution, POT seam
+crates/lyrics        ml-lyrics    provider ladder + LRC/TTML/romanisation
+crates/store         ml-store     SQLite schema v1 + typed CRUD
+crates/downloads     ml-downloads manifest-backed offline download manager
+crates/audio         ml-audio     mpv JSON IPC engine + playback controller
+crates/integrations  ml-integrations MPRIS/tray/notifications/single-instance/Discord
+crates/ui            ml-ui        eframe app + `metrolist` binary
+crates/ui/assets/fonts            bundled Roboto + Material Symbols
+assets/i18n                       en.json + 55 locale overlays (not yet wired)
+docs/PARITY.md                    feature parity matrix
+docs/TEST-PARITY.md               upstream test → Rust requirement map
+docs/ARCHITECTURE.md              ownership, frozen APIs, threads, data flow
+docs/PROOFS.md, proofs/           Verus proofs, freeze manifest, review record
+docs/BUILD.md, packaging/         AppImage, glibc floor, mpv bundle
+```
+
+## UI architecture summary
+
+- **Theme** (`ui/src/theme/`): M3 colour roles from `material-colors`
+  SPEC_2025/TonalSpot with seed `#ED5564`; pure-black mode; Roboto 400/500/700
+  and Material Symbols Rounded are compiled into the binary from
+  `crates/ui/assets/fonts/` (swap those files to rebrand; notices in `NOTICE`).
+- **Shell** (`ui/src/shell/`): compact `< 840 dp` = top bar + chips + content +
+  mini player + bottom nav; expanded `>= 840 dp` = 88 dp nav rail + centered
+  960 dp column + pinned mini player.
+- **Screens** (`ui/src/screens/`): live Home/Search/Album/Artist/Playlist,
+  Library (songs/albums/artists/playlists/downloads/history), Liked, local
+  playlist editing, Settings, and the player/queue/lyrics views. Together is a
+  placeholder.
+- **State**: `ml_core::Queue` is the queue state machine;
+  `ml_core::PlayerSnapshot` and `AppEvent` are the backend->UI channel types.
+- **Position** is reported by the mpv engine over the audio event channel; the
+  UI never advances it on its own.
+
+## Settings and data paths
+
+Resolved with `directories` 6 under the application name `metrolist-desktop`:
+
+- config: `$XDG_CONFIG_HOME/metrolist-desktop/settings.json`
+- data: `$XDG_DATA_HOME/metrolist-desktop/library.db`
+- cache: `$XDG_CACHE_HOME/metrolist-desktop/art/`
+
+`settings.json` is created with defaults on first run and rewritten whenever
+settings change. Runtime playback extras (EQ preset, speed, output device,
+notifications toggle) live in the SQLite `kv` table. The `dynamic_accent` flag
+is reserved for a future XDG portal accent reader; the seed colour is used.
+
+## Dependency policy
+
+eframe/egui 0.37, material-colors 0.5, reqwest 0.13 (rustls, no OpenSSL),
+tokio 1.54, rusqlite 0.41 (`bundled`), serde, thiserror. No `egui-elegance` at
+runtime. Unused workspace dependencies stay declared so later agents need no
+manifest churn; only inherited dependencies are compiled.
+
+## License and attribution
+
+GPL-3.0-only, no "or later" option. This is an unofficial port of Metrolist and
+a derivative work of the upstream GPL-3.0-only Android source; it is not
+affiliated with, endorsed by or sponsored by the Metrolist project, Google LLC
+or YouTube. Upstream project, bundled fonts (Roboto OFL-1.1, Material Symbols
+Apache-2.0), translations and the bundled mpv/FFmpeg/libass/libplacebo licences
+are recorded in `NOTICE`; the full GPL text is in `LICENSE`. "Metrolist",
+"YouTube", "YouTube Music", "Google" and "Android" are trademarks of their
+respective owners.

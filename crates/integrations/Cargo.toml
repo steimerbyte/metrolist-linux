@@ -1,0 +1,31 @@
+[package]
+name = "ml-integrations"
+description = "Desktop integrations: MPRIS2, StatusNotifier tray, single instance, notifications"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ml-core.workspace = true
+crossbeam-channel.workspace = true
+# zbus 6 side (mpris-server): driven by the tokio runtime this crate owns.
+mpris-server = { workspace = true, features = ["tokio"] }
+tokio.workspace = true
+# zbus 5 side (ksni, notify-rust): async-io, no tokio mixing inside those crates.
+ksni = { workspace = true, default-features = false, features = ["async-io", "blocking"] }
+notify-rust.workspace = true
+single-instance.workspace = true
+image.workspace = true
+serde_json.workspace = true
+# Last.fm: signed form POSTs + md5 signatures (no cookies, so no default-tls).
+reqwest = { workspace = true, features = ["rustls"] }
+md-5 = "0.10.6"
+
+[features]
+default = []
+# Discord Rich Presence over the local IPC socket; no OAuth, off by default.
+# The IPC frames are JSON, so enabling it is what pulls `serde_json` in.
+discord = []

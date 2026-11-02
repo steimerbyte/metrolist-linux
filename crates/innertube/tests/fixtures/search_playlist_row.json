@@ -1,0 +1,31 @@
+{
+  "flexColumns": [
+    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Title"}]}}},
+    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [
+      {"text": "Owner & Friends"}, {"text": " • "}, {"text": "12 songs"}
+    ]}}}
+  ],
+  "navigationEndpoint": {
+    "browseEndpoint": {
+      "browseId": "VLitem",
+      "browseEndpointContextSupportedConfigs": {
+        "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_PLAYLIST"}
+      }
+    }
+  },
+  "thumbnail": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {"thumbnails": [{"url": "cover", "width": 100, "height": 100}]}
+    }
+  },
+  "overlay": {
+    "musicItemThumbnailOverlayRenderer": {
+      "content": {
+        "musicPlayButtonRenderer": {
+          "playNavigationEndpoint": {"watchPlaylistEndpoint": {"playlistId": "playlist"}}
+        }
+      }
+    }
+  },
+  "menu": {"menuRenderer": {"items": []}}
+}

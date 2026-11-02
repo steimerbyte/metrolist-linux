@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Metrolist Desktop
+GenericName=Music Player
+Comment=Unofficial desktop client for YouTube Music
+Exec=metrolist
+Icon=metrolist-desktop
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+MimeType=x-scheme-handler/metrolist;
+StartupNotify=true
+StartupWMClass=metrolist

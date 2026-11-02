@@ -1,0 +1,53 @@
+{
+  "title": {"runs": [{"text": "Title"}]},
+  "subtitle": {"runs": [{"text": "Album"}, {"text": " • "}, {"text": "2024"}]},
+  "navigationEndpoint": {
+    "browseEndpoint": {
+      "browseId": "VLitem",
+      "browseEndpointContextSupportedConfigs": {
+        "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ALBUM"}
+      }
+    }
+  },
+  "thumbnailRenderer": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {"thumbnails": [{"url": "cover", "width": 100, "height": 100}]}
+    }
+  },
+  "thumbnailOverlay": {
+    "musicItemThumbnailOverlayRenderer": {
+      "content": {
+        "musicPlayButtonRenderer": {
+          "playNavigationEndpoint": {"watchPlaylistEndpoint": {"playlistId": "playlist"}}
+        }
+      }
+    }
+  },
+  "menu": {
+    "menuRenderer": {
+      "items": [
+        {
+          "menuNavigationItemRenderer": {
+            "text": {"runs": [{"text": "Go to artist"}]},
+            "icon": {"iconType": "ARTIST"},
+            "navigationEndpoint": {"browseEndpoint": {"browseId": "UCartist"}}
+          }
+        },
+        {
+          "menuNavigationItemRenderer": {
+            "text": {"runs": []},
+            "icon": {"iconType": "MUSIC_SHUFFLE"},
+            "navigationEndpoint": {"watchPlaylistEndpoint": {"playlistId": "playlist"}}
+          }
+        },
+        {
+          "menuNavigationItemRenderer": {
+            "text": {"runs": []},
+            "icon": {"iconType": "MIX"},
+            "navigationEndpoint": {"watchPlaylistEndpoint": {"playlistId": "playlist"}}
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "fixedColumns": [
+    {"musicResponsiveListItemFixedColumnRenderer": {"text": {"runs": [{"text": "3:12"}]}}}
+  ],
+  "flexColumns": [
+    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [
+      {
+        "text": "Track",
+        "navigationEndpoint": {
+          "watchEndpoint": {
+            "videoId": "video",
+            "watchEndpointMusicSupportedConfigs": {
+              "watchEndpointMusicConfig": {"musicVideoType": "MUSIC_VIDEO_TYPE_ATV"}
+            }
+          }
+        }
+      }
+    ]}}},
+    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": []}}}
+  ],
+  "playlistItemData": {"videoId": "video"}
+}

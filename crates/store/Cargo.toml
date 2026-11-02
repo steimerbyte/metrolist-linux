@@ -1,0 +1,18 @@
+[package]
+name = "ml-store"
+description = "SQLite persistence (rusqlite bundled) and schema migrations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ml-core.workspace = true
+# `functions` registers `ml_fold()`, the Unicode case-folding used by local
+# search; SQLite's own LIKE only lowercases ASCII.
+rusqlite = { workspace = true, features = ["functions"] }
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true

@@ -1,0 +1,19 @@
+{
+  "title": {"runs": [{"text": "Title"}]},
+  "subtitle": {"runs": [{"text": "Owner & Friends"}]},
+  "header": {"musicCardShelfHeaderBasicRenderer": {"title": {"runs": [{"text": "Title"}]}}},
+  "onTap": {
+    "browseEndpoint": {
+      "browseId": "VLitem",
+      "browseEndpointContextSupportedConfigs": {
+        "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_PLAYLIST"}
+      }
+    }
+  },
+  "thumbnail": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {"thumbnails": [{"url": "cover", "width": 100, "height": 100}]}
+    }
+  },
+  "buttons": []
+}

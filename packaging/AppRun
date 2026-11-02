@@ -1,0 +1,25 @@
+#!/bin/sh
+# AppImage entry point. Keep host GL/audio libraries out of the bundle: Mesa,
+# libwayland, PipeWire, ALSA and fontconfig must match the running driver/daemon.
+set -eu
+APPDIR="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
+export APPDIR
+export PATH="$APPDIR/usr/bin:$PATH"
+
+# The bundled mpv and the non-system libraries from its ldd closure live here.
+# They are loaded only by mpv (a separate process), never by the UI binary.
+MPV_DIR="$APPDIR/usr/lib/metrolist/mpv"
+if [ -x "$MPV_DIR/mpv" ]; then
+    LD_LIBRARY_PATH="$MPV_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export LD_LIBRARY_PATH
+    # The current engine resolves $APPDIR/usr/bin/mpv; this is for future code
+    # that prefers an explicit override.
+    METROLIST_MPV="$APPDIR/usr/bin/mpv"
+    export METROLIST_MPV
+fi
+
+# Bundled JSON locales/fonts/icons; the binary may use this instead of embedding.
+METROLIST_ASSETS="${METROLIST_ASSETS:-$APPDIR/usr/share/metrolist/assets}"
+export METROLIST_ASSETS
+
+exec "$APPDIR/usr/bin/metrolist" "$@"

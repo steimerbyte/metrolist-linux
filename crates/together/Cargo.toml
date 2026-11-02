@@ -1,0 +1,32 @@
+[package]
+name = "ml-together"
+description = "Listen Together protocol (websocket rooms and queue sync)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ml-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net"] }
+tokio-tungstenite = { workspace = true, features = ["connect"] }
+futures-util.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+rand.workspace = true
+prost = "0.14"
+flate2 = "1"
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
+
+[build-dependencies]
+prost-build = "0.14"
+protox = "0.9"
+
+[dev-dependencies]
+tokio.workspace = true

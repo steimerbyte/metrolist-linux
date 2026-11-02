@@ -1,0 +1,15 @@
+[package]
+name = "ml-audio"
+description = "Playback engine facade (mpv JSON IPC) with command/event channels"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ml-core.workspace = true
+crossbeam-channel.workspace = true
+libc.workspace = true
+serde_json.workspace = true

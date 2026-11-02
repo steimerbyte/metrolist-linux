@@ -1,0 +1,25 @@
+# Frozen source declaration: <proof area> <path relative to the repo root>.
+# check-drift.sh iterates THIS list (not the SOURCE.md rows), so deleting a row
+# from a SOURCE.md cannot disable the drift check. Both this file and every
+# SOURCE.md are covered by FREEZE.sha256 and the review gate hash.
+audio crates/audio/src/controller.rs
+audio crates/audio/src/engine.rs
+integrations crates/integrations/src/mapping.rs
+media crates/core/src/media.rs
+pages crates/innertube/src/pages/next.rs
+queue crates/core/src/queue.rs
+radio crates/innertube/src/lib.rs
+radio crates/ui/src/app.rs
+radio crates/ui/src/services.rs
+recognition crates/recognition/src/signature.rs
+settings crates/core/src/settings.rs
+stream crates/innertube/src/context.rs
+stream crates/innertube/src/player.rs
+stream crates/innertube/src/stream.rs
+together crates/together/src/clock.rs
+together crates/together/src/codec.rs
+together crates/together/src/model.rs
+together crates/together/src/sync.rs
+ui crates/downloads/src/model.rs
+ui crates/ui/src/pure.rs
+util crates/core/src/util.rs

@@ -1,0 +1,16 @@
+{
+  "flexColumns": [
+    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Song"}]}}},
+    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [
+      {"text": "canción"}, {"text": " • "}, {"text": "14 m reproducciones"}, {"text": " • "},
+      {"text": "3,3 M reproducciones"}, {"text": " • "}, {"text": "歌曲"}, {"text": " • "},
+      {"text": "1億 回再生"}
+    ]}}}
+  ],
+  "thumbnail": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {"thumbnails": [{"url": "https://example.com/cover.jpg", "width": 100, "height": 100}]}
+    }
+  },
+  "playlistItemData": {"videoId": "videoId"}
+}

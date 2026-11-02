@@ -1,0 +1,19 @@
+{
+  "contents": {
+    "twoColumnBrowseResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "content": {
+              "sectionListRenderer": {
+                "contents": [
+                  {"musicResponsiveHeaderRenderer": {"title": {"runs": []}, "subtitle": {"runs": []}}}
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

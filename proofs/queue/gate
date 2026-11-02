@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Proof gate: Verus -> Lynette structural gate -> trust-marker scan. Fail closed.
+# Usage: ./gate            (run from this directory)
+# Environment: VERUS (verus binary), LYNETTE (lynette binary), RLIMIT (default 100)
+set -uo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+name=$(basename "$here")
+VERUS=${VERUS:-$HOME/.local/opt/verus-x86-linux/verus}
+LYNETTE=${LYNETTE:-$here/../../../tools/Lynette/target/release/lynette}
+RLIMIT=${RLIMIT:-100}
+TRUST="$here/../trust_scan.py"
+log="$here/../logs/$name.log"
+mkdir -p "$here/../logs"
+
+for f in original.rs candidate.rs; do
+    [ -f "$here/$f" ] || { echo "FAIL $name: missing $f" | tee "$log"; exit 1; }
+done
+[ -x "$VERUS" ] || { echo "FAIL $name: verus not executable at $VERUS" | tee "$log"; exit 1; }
+[ -x "$LYNETTE" ] || { echo "FAIL $name: lynette not executable at $LYNETTE" | tee "$log"; exit 1; }
+
+{
+    echo "== proof: $name"
+    echo "== date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "== verus: $("$VERUS" --version 2>&1 | tr '\n' ' ')"
+    echo "== invocation: verus candidate.rs --crate-type=lib --expand-errors --rlimit $RLIMIT"
+    echo "== lynette: $("$LYNETTE" --version 2>&1 | tr '\n' ' ' || true)"
+} > "$log"
+
+status=0
+cd "$here" || exit 1
+
+out=$("$VERUS" candidate.rs --crate-type=lib --expand-errors --rlimit "$RLIMIT" 2>&1); rc=$?
+printf '%s\n' "$out" >> "$log"
+echo "$out" | grep -E "^verification results:: [0-9]+ verified, [0-9]+ errors" >/dev/null || rc=1
+echo "$out" | grep -qE "^verification results:: [0-9]+ verified, 0 errors" || rc=1
+[ $rc -eq 0 ] || { echo "FAIL $name: verus" | tee -a "$log"; status=1; }
+
+out=$("$LYNETTE" additions original.rs candidate.rs 2>&1); rc=$?
+printf '== lynette additions: %s\n' "$out" >> "$log"
+[ $rc -eq 0 ] || { echo "FAIL $name: lynette additions (exit $rc)" | tee -a "$log"; status=1; }
+
+out=$(python3 "$TRUST" original.rs candidate.rs 2>&1); rc=$?
+printf '== trust_scan: %s\n' "$out" >> "$log"
+[ $rc -eq 0 ] || { echo "FAIL $name: trust_scan" | tee -a "$log"; status=1; }
+
+out=$(bash "$here/../freeze-check.sh" 2>&1); rc=$?
+printf '== freeze: %s\n' "$out" >> "$log"
+[ $rc -eq 0 ] || { echo "FAIL $name: freeze" | tee -a "$log"; status=1; }
+
+if [ $status -eq 0 ]; then
+    echo "PASS $name ($(grep -oE '[0-9]+ verified, 0 errors' "$log" | tail -1))" | tee -a "$log"
+fi
+exit $status

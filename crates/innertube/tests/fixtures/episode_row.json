@@ -1,0 +1,14 @@
+{
+  "flexColumns": [
+    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Title"}]}}},
+    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [
+      {"text": "Owner & Friends"}, {"text": " • "}, {"text": "Yesterday"}, {"text": " • "}, {"text": "3:12"}
+    ]}}}
+  ],
+  "playlistItemData": {"videoId": "episode"},
+  "thumbnail": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {"thumbnails": [{"url": "cover", "width": 100, "height": 100}]}
+    }
+  }
+}

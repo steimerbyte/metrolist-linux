@@ -1,0 +1,41 @@
+[package]
+name = "ml-ui"
+description = "Metrolist Linux egui application: Material 3 shell, theme, widgets and screens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+default-run = "metrolist"
+
+[lib]
+name = "ml_ui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "metrolist"
+path = "src/main.rs"
+
+[dependencies]
+ml-core.workspace = true
+ml-innertube.workspace = true
+ml-audio.workspace = true
+ml-store.workspace = true
+ml-lyrics.workspace = true
+ml-integrations = { workspace = true, features = ["discord"] }
+ml-together.workspace = true
+ml-downloads.workspace = true
+ml-recognition.workspace = true
+eframe.workspace = true
+egui.workspace = true
+material-colors.workspace = true
+image = { workspace = true, features = ["jpeg", "webp"] }
+directories.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+tokio.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

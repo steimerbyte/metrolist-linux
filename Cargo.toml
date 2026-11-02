@@ -1,0 +1,92 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/innertube",
+    "crates/lyrics",
+    "crates/store",
+    "crates/downloads",
+    "crates/together",
+    "crates/recognition",
+    "crates/audio",
+    "crates/integrations",
+    "crates/ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.99"
+license = "GPL-3.0-only"
+repository = "https://example.invalid/metrolist-linux"
+authors = ["Metrolist Linux contributors"]
+
+[workspace.dependencies]
+# Internal crates
+ml-core = { path = "crates/core" }
+ml-innertube = { path = "crates/innertube" }
+ml-lyrics = { path = "crates/lyrics" }
+ml-store = { path = "crates/store" }
+ml-downloads = { path = "crates/downloads" }
+ml-together = { path = "crates/together" }
+ml-recognition = { path = "crates/recognition" }
+ml-audio = { path = "crates/audio" }
+ml-integrations = { path = "crates/integrations" }
+
+# UI
+eframe = "0.37"
+egui = "0.37"
+material-colors = "0.5"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+
+# Networking / async
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "time", "sync"] }
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["rustls-tls-webpki-roots"] }
+
+# Data
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.41", features = ["bundled"] }
+blake3 = "1.8"
+directories = "6"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Errors / logging
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Concurrency / utility
+crossbeam-channel = "0.5"
+libc = "0.2"
+parking_lot = "0.12"
+url = "2.5"
+regex = "1"
+unicode-normalization = "0.1"
+rand = "0.10"
+
+# Media / imaging
+fast_image_resize = "6.1"
+
+# Audio recognition (declared for later)
+rustfft = "6.4"
+cpal = "0.18"
+rubato = "5"
+hound = "3.5"
+
+# Integrations (declared for later; unused crates are not built)
+mpris-server = "0.11"
+zbus = "6.2"
+ksni = { version = "0.3", default-features = false }
+notify-rust = "4"
+single-instance = "0.3"
+
+# PO-token / BotGuard JS (planned, see docs/ARCHITECTURE.md)
+rquickjs = "0.14"
+
+[profile.release]
+lto = "thin"
+strip = true
