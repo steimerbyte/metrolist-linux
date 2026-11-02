@@ -21,6 +21,8 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       CARGO_BUILD_JOBS: 1
+      # ml-integrations single-instance tests need a private runtime dir.
+      XDG_RUNTIME_DIR: /tmp/xdg-runtime
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +32,7 @@ jobs:
           apt-get install -y --no-install-recommends \
             ca-certificates curl pkg-config libasound2-dev desktop-file-utils \
             mpv binutils
+          mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 
       - name: Format
         run: cargo fmt --all --check
