@@ -17,9 +17,6 @@
 /.omp
 /proofs/logs
 
-# Unused 15 MB duplicate; crates/ui/src/theme/fonts.rs includes ../../assets/fonts
-/crates/ui/assets/fonts
-
 # Signed-in account captures: private review evidence, never published
 /docs/ui-*-live*.png
 /docs/audit/live-*
