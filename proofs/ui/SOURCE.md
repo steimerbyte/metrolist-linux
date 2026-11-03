@@ -4,7 +4,7 @@
 
 | file | sha256 (at freeze) |
 |------|--------------------|
-| crates/ui/src/pure.rs | bd69302e719e139de95fd2194b7d0c015a5d03068a1f4b560b9214018802c808 |
+| crates/ui/src/pure.rs | 5daac36cdc6ccdb88a69951214492239d18256bf8a854591c356b17cfd2b8b92 |
 | crates/downloads/src/model.rs | 73e3b75407ab16e97435933955a007571a830a0ec415095534110b4eeff3b648 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
@@ -15,12 +15,12 @@ Lynette gate: `ed5855fb68c18a77a5ec0c98512497c5ef4e7d59`.
 
 `crates/ui/src/pure.rs` declares its helpers as "deterministic, total and
 panic-free so the proof lead can freeze them into Verus spec/exec pairs". This
-pair proves the integer/byte-shaped ones. It does **not** cover the file: 22
-exec functions are in the pair — 16 core functions plus six transcription
+pair proves the integer/byte-shaped ones. It does **not** cover the file: 26
+exec functions are in the pair — 17 core functions plus nine transcription
 helpers — and everything else is listed under "Not covered (full inventory)"
 below and is *not* claimed.
 
-Proven (16 core functions + 6 transcription helpers):
+Proven (17 core functions + 9 transcription helpers):
 
 1. `session_file_path`
 2. `queue_index_for_id`
@@ -38,12 +38,16 @@ Proven (16 core functions + 6 transcription helpers):
 14. `download_click`
 15. `back_route`
 16. `cookie_import_format`
-17. `trim_start_span`, `starts_with_at`, `count_tabs`, `line_ok_exec`,
+17. `expand_import_path` (v0.1.2)
+18. `trim_start_span`, `starts_with_at`, `count_tabs`, `line_ok_exec`,
     `has_netscape_line`, `contains_byte` (six helpers; they exist only to model
     `trim_start`/`starts_with`/`lines`/`split('\t')` and have their own
-    contracts).
-18. `lemma_back_route_is_a_pop` and the other `proof fn` helpers are ghost
-    lemmas; they are not part of the exec surface.
+    contracts), and `trim_span`, `copy_range`, `path_join` (three helpers added
+    with `expand_import_path`: ASCII trim spans, byte-slice copy, Unix
+    `PathBuf::join`).
+19. `lemma_back_route_is_a_pop`, `lemma_quotes_match`,
+    `lemma_subrange_shift`, `lemma_trail_run` and the other `proof fn` helpers
+    are ghost lemmas; they are not part of the exec surface.
 
 ## Model deviations
 
@@ -158,6 +162,19 @@ Proven (16 core functions + 6 transcription helpers):
   `lemma_tabs_in_extend`), and `has_netscape_line`/`contains_byte` scan exactly
   the documented ranges (`lines_ok`, `has_byte_in`).
 
+- **`expand_import_path(&str, Option<&Path>) -> PathBuf`** is modelled on
+  bytes like `session_file_path`: `expand_import_path(input: &Vec<u8>,
+  home: Option<Vec<u8>>) -> Vec<u8>`; the caller's `HOME` becomes a byte copy.
+  `str::trim` is transcribed as the six ASCII whitespace bytes (Rust trims all
+  Unicode `White_Space`; non-ASCII whitespace is out of subset, as in
+  `cookie_import_format`). The quote rule is the source's: one matching `"…"`
+  pair, else one matching `'…'` pair, else unchanged. `PathBuf::join` is
+  transcribed exactly for Unix bytes (`path_join` / `path_join_spec`): an absolute `rest`
+  replaces `home`, an empty `rest` yields `home` or `home/`, otherwise one
+  separator is inserted; `.`/`..` are not normalized by `PathBuf` and are
+  therefore kept verbatim. `PathBuf::from` of the plain text is the byte copy.
+  Windows separators and non-UTF-8 `OsStr` are out of subset.
+
 ## Not covered (full inventory)
 
 Every public/total helper of `pure.rs` that this pair does **not** prove, and
@@ -203,3 +220,23 @@ The two new helpers are `f32` and fall under the documented float policy
 changed for the Settings nav routing and the single-fixture player demo; that
 file is owned by `proofs/radio` and its delta is recorded there — this pair
 does not prove anything in `app.rs`.
+
+## Re-freeze 2026-11-02 v0.1.2 (account cookie import)
+
+`crates/ui/src/pure.rs` gained `expand_import_path` (trim, one matching quote
+pair, `~` / `~/` against the caller's `HOME`); the new file hash is in the
+table above (`5daac36c…`). It is total and pure, so it is now a real
+obligation instead of a candidate: `expand_import_path` is transcribed on
+bytes with `expand_import_path_spec` (trim → unquote → `~`/`~/`), the exact
+`PathBuf::join` rules as `path_join_spec`, and the helper contracts
+`trim_span` / `path_join` / `copy_range`. New ghost lemmas:
+`lemma_quotes_match` (the exec quote test is exactly `are_quotes` on the
+trimmed slice), `lemma_subrange_shift` (nested-slice offsets) and
+`lemma_trail_run` (a whitespace suffix of known extent is exactly
+`trail_ws_len`). `candidate.rs` verifies 77 functions, `original.rs` 26 with
+the 20 expected verification errors of the scaffold (no resolution errors).
+
+The other proven functions of this pair were re-read at the new revision and
+are byte-identical apart from the additive `expand_import_path` block and the
+vinyl helpers from v0.1.1; `crates/downloads/src/model.rs` is unchanged
+(`73e3b754…`).

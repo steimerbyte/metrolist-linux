@@ -275,11 +275,13 @@ pub(crate) fn cookie_value(cookie: &str, name: &str) -> Option<String> {
     None
 }
 
-/// `SAPISIDHASH <ts>_<sha1(ts origin sapisid)>`, the only auth upstream sends.
+/// `SAPISIDHASH <ts>_<sha1(ts sapisid origin)>`, the only auth upstream sends.
+/// The field order is load-bearing: `ts origin sapisid` is answered with a
+/// signed-out 200 (`logged_in:0`) because the server recomputes the other order.
 fn sapisidhash(sapisid: &str, origin: &str, timestamp: u64) -> String {
     use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
-    hasher.update(format!("{timestamp} {origin} {sapisid}").as_bytes());
+    hasher.update(format!("{timestamp} {sapisid} {origin}").as_bytes());
     let digest = hasher.finalize();
     let mut hex = String::with_capacity(digest.len() * 2);
     for byte in digest {
@@ -590,7 +592,7 @@ mod tests {
     #[test]
     fn sapisidhash_matches_the_documented_vector() {
         let mut hasher = Sha1::new();
-        hasher.update(b"1700000000 https://music.youtube.com SAPISID");
+        hasher.update(b"1700000000 SAPISID https://music.youtube.com");
         let expected = hasher.finalize();
         let expected_hex = expected
             .iter()

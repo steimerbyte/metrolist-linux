@@ -36,8 +36,9 @@ and is **not** part of this crate graph.
   single instance with `metrolist://play?v=…` forwarding.
 - **Integrations** — optional Last.fm scrobbling (session or username/password
   login, credentials in `${data_dir}/secrets.json`, mode 0600) and Discord Rich
-  Presence (feature-gated, off by default). Browser-cookie account import into
-  the account screen, read-only.
+  Presence (feature-gated, off by default). Account sign-in by importing a
+  browser cookie file (Account → *Sign in with cookies.txt*), with library
+  sync and a rotating `session-cookies.txt` (`0600`).
 - **Theme** — Material 3 roles from `material-colors` (SPEC_2025/TonalSpot),
   System/Light/Dark/Pure black, seed colour presets and picker, responsive
   compact (`< 840 dp`) and expanded shells.
@@ -83,28 +84,41 @@ interfaces and per-workstream ownership.
 
 ## AppImage
 
-`dist/Metrolist-Desktop-0.1.1-x86_64.AppImage` — 120,732,152 bytes (115.1 MiB),
+`dist/Metrolist-Desktop-0.1.2-x86_64.AppImage` — 120,723,960 bytes (115.1 MiB),
 AppImage type 2 (runtime commit `fedfad5`), built in `rust:1.99.1-bookworm`
 from the frozen tree in `docs/SOURCE-FREEZE.sha256` (246 files, self-sha256
-`345a3ebb…`). Published as
-[v0.1.1](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.1).
+`084d9393…`). Published as
+[v0.1.2](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.2).
 
 ```text
-sha256  01b40cf28fc68819973ea8885903591ba0aa32af84158dff65e223d01e4da34e
+sha256  c23bd3618f37aa874babb32f68ff30340c81d54ad8ea6a3f58e673c64b270d46
 ```
 
 ```sh
 cd dist && sha256sum -c SHA256SUMS
-# Metrolist-Desktop-0.1.1-x86_64.AppImage: OK
+# Metrolist-Desktop-0.1.2-x86_64.AppImage: OK
 ```
 
 ```sh
 chmod +x dist/Metrolist-Desktop-*-x86_64.AppImage
 ./dist/Metrolist-Desktop-*-x86_64.AppImage
 # or install it for the desktop (the layout used for release verification):
-mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.1-x86_64.AppImage \
+mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.2-x86_64.AppImage \
   ~/AppImages/metrolist_desktop.appimage && chmod 755 ~/AppImages/metrolist_desktop.appimage
 ```
+
+### What changed in 0.1.2
+
+- **Account login works.** `SAPISIDHASH` hashed the fields in the wrong order
+  (`ts origin sapisid`), which YouTube answers with a signed-out 200; it now
+  hashes `ts sapisid origin`. A quoted `SESSION_INDEX` (`"0"`) is parsed too.
+- **Import via file**: Account → *Sign in with cookies.txt* (or
+  `~/Downloads/cookies.txt`) accepts a Netscape/header/JSON cookie file,
+  expands `~` and trims quotes/whitespace, keeps the session in
+  `$XDG_DATA_HOME/metrolist-desktop/session-cookies.txt` with mode `0600`, and
+  syncs the library (liked songs, albums, artists, playlists).
+- Verified live with a masked account: 14 playlists / 24 songs / 1 album /
+  25 artists; the Account screen shows signed in from the saved session.
 
 ### What changed in 0.1.1
 
@@ -144,21 +158,22 @@ dependency details are in `docs/BUILD.md` and `packaging/README.md`.
 
 | Check | Result |
 |---|---|
-| `cargo test --workspace --no-fail-fast` | **715 passed, 0 failed, 30 ignored** |
-| Verus proofs (`proofs/run-gates.sh`) | **12 proof sets, 277 functions verified, 0 errors** (frozen `1a07e2b5…`, gate `9ce7fb1a…`) |
-| Independent proof review | **ACCEPT** of the full gate — 12/12 pairs, 277 functions, token-lexer `spec_guard` (`proofs/REVIEW.md`) |
-| `cargo fmt`/`check`/`clippy`/`build --release` | pass; re-run for 0.1.1 |
+| `cargo test --workspace --no-fail-fast` | **715 passed, 0 failed, 31 ignored** |
+| Verus proofs (`proofs/run-gates.sh`) | **12 proof sets, 289 functions verified, 0 errors** (frozen `bfbfbd84…`, gate `19c01a9b…`) |
+| Independent proof review | **ACCEPT** of the full gate — 12/12 pairs, 289 functions, token-lexer `spec_guard` (`proofs/REVIEW.md`) |
+| `cargo fmt`/`check`/`clippy`/`build --release` | pass; re-run for 0.1.2 |
 | `./proofs/check-drift.sh` | no source drift (21 declared sources match) |
 | `metrolist --smoke 120` | `SMOKE_OK frames=120 backend=Vulkan` |
 | AppImage smoke (`--smoke 120`) | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` in a clean environment on Wayland and via `--appimage-extract-and-run`; screenshot at 405×900 |
+| Account login (live) | masked account signed in, `session-cookies.txt` mode `0600` with 27 cookies; library sync 14 playlists / 24 songs / 1 album / 25 artists |
 | Audio mute fix | seeded WirePlumber stream mute cleared by the engine (v0.1.0 control stayed muted); explicit user "test mute" still mutes |
 | Player / Settings | rotating vinyl screenshot (`docs/ui-player-vinyl-405.png`); Settings reachable from sidebar and compact bottom nav (`docs/ui-sidebar-settings-405.png`) |
 | Shutdown / leak checks | 0 mpv processes, 0 engine sockets and 0 instance socket after smoke and SIGTERM; SIGKILL leaves 0 children and the next launch sweeps stale sockets |
 | Installed copy (`~/AppImages/metrolist_desktop.appimage`, 755) | same size and sha256; clean-env smoke, 0 leaks |
-| `sha256sum -c dist/SHA256SUMS` | `Metrolist-Desktop-0.1.1-x86_64.AppImage: OK` |
+| `sha256sum -c dist/SHA256SUMS` | `Metrolist-Desktop-0.1.2-x86_64.AppImage: OK` |
 
-The 30 ignored tests are the live ones that need mpv, D-Bus/tray/notification
-services, the single-instance socket or the network.
+The 31 ignored tests are the live ones that need mpv, D-Bus/tray/notification
+services, the single-instance socket, the network or a real account cookie file.
 
 Evidence and full logs: `docs/RELEASE-CHECK.md` (gate commands, per-package
 counts, binary hash), `docs/PROOFS.md` (what each proof covers, the independent
@@ -182,11 +197,12 @@ reviewer after any gate change.
 Not a 100 % port. `docs/PARITY.md` is the per-feature matrix; the limits that
 matter for a release are:
 
-- **Account**: browser-cookie import only (Netscape/header format, read-only
-  session discovery). It needs a *fresh* browser session — an expired cookie
-  snapshot is rejected instead of half-loading a library. No OAuth/WebView
-  login, and no live account session was verified during this release, so
-  library sync, remote history reporting and Premium-only paths are unproven.
+- **Account**: cookie-file import only (Netscape/header/JSON, or the newest
+  LibreWolf/Firefox profile). It needs a *fresh* browser session — an expired
+  cookie snapshot is rejected instead of half-loading a library. Login and
+  library sync are verified live as of 0.1.2 (masked account, 14 playlists /
+  24 songs / 1 album / 25 artists); there is no OAuth/WebView login and no
+  PO-token provider, and remote history reporting stays unproven.
 - **Integrations**: Last.fm scrobbling and Discord Rich Presence are covered by
   unit and fake-socket tests only; neither was run against a live account or a
   running Discord client.

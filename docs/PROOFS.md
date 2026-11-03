@@ -113,7 +113,7 @@ commit against the parser from the pinned Verus release (Lynette's own
 source drift (`crates/**` changed without a re-freeze) as well as on a failing
 gate; CI duplicates no version pins, it sources `proofs/verus.env`.
 
-Current status: **12 proofs, 277 functions verified, 0 errors**.
+Current status: **12 proofs, 289 functions verified, 0 errors**.
 
 | proof | source | verified | log |
 |-------|--------|---------:|-----|
@@ -216,7 +216,7 @@ Verus cannot take: I/O, async, floats, serde, FFI/D-Bus, `format!`, iterators,
 | `base64url_nopad` injectivity | CANDIDATE | needs a decoder round-trip lemma (inverse over 4-char groups + tail); output alphabet/length proven |
 | `player::validate_tracking_url`, `parse_player`, `stream_info`, `number`, `player_body`, `video_thumbnail` | OUT-OF-SUBSET | `serde_json::Value`, `reqwest::Url`, regex-free string scanning |
 | `parse::*` (`text_of`, `runs_from`, `extract_artists`, `parse_time`, `extract_duration`, `split_by_separator`, `odd_elements`, `ownership`, `thumbnail_url`, `largest_thumbnail`, `has_explicit`, `continuation`, `shelf_continuation`, `opt_str`, `array_at`) | CANDIDATE | pure over `serde_json::Value`; a Verus model needs a JSON tree type (next target: `parse_time`, `extract_duration`, `split_by_separator` only) |
-| `context::is_stale`, `ClientKind::{host,client_id,user_agent,version}`, `cookie_value`, `parse_visitor_data`, `sapisidhash` | OUT-OF-SUBSET | clock/regex/`sha1` hex; `cookie_value`'s `split_once` is out of subset |
+| `context::is_stale`, `ClientKind::{host,client_id,user_agent,version}`, `cookie_value`, `parse_visitor_data`, `sapisidhash` | OUT-OF-SUBSET | clock/regex/`sha1` hex; `cookie_value`'s `split_once` is out of subset. `sapisidhash`'s v0.1.2 field order (`ts sapisid origin`) is the account fix and is test-pinned by the `context.rs`/`cookies.rs` vector tests, not proven |
 | `pot::is_expired`, `PoTokens` | OUT-OF-SUBSET | `SystemTime` + `Mutex` |
 | `Innertube` client methods (`home` … `next`, `charts`, `moods_and_genres`, `new_releases`, `podcasts`, `podcast`, `browse`, `queue_append`, `refresh_client_config`, `send`) | OUT-OF-SUBSET | `async` + `reqwest`; `queue_append`'s only pure part is `pages::next::append` (VERIFIED) |
 | `stream::content_total`, `parse_content_range_total` | CANDIDATE | total and pure over `(u16, Option<&str>, Option<u64>)` but the decision runs through `&str` scanning (`split_once`, `trim`, `parse`, `starts_with`), which has no Verus model — needs a `str`-as-`Seq<u8>` scanner (no `reqwest` in these signatures) |
@@ -324,6 +324,7 @@ Verus cannot take: I/O, async, floats, serde, FFI/D-Bus, `format!`, iterators,
 | `pure::sleep_seconds` | VERIFIED | `proofs/ui`: `min(minutes*60, 86_400)`, exact for 1..=1440 min, monotone, never above 24 h |
 | `pure::seek_relative` | VERIFIED | `proofs/ui`: `min(saturating target, duration_ms)` for `duration_ms > 0`, no underflow, result inside the track |
 | `pure::seed_color_value` | VERIFIED | `proofs/ui`: masks to the low 24 bits, high byte zero |
+| `pure::expand_import_path` (v0.1.2) | VERIFIED | `proofs/ui` (UTF-8 bytes, ASCII `trim`, exact `PathBuf::join`): trim then one matching quote pair, `~` -> HOME, `~/rest` -> HOME joined to `rest` (absolute `rest` replaces HOME, empty `rest` adds the separator only when needed), no HOME means the text is returned unchanged; `lemma_quotes_match`, `lemma_subrange_shift`, `lemma_trail_run` |
 | `pure::progress_percent` (`downloads::model`) | VERIFIED | `proofs/ui`: `0` for a zero total, else `min(bytes*100/total, 100)`; always `<= 100`; `bytes >= total` ⇒ `100` |
 | `pure::storage_percent` | VERIFIED | `proofs/ui`: `None` iff no limit, `Some(100)` for a zero limit, else `progress_percent`, `<= 100` |
 | `pure::download_badge` | VERIFIED | `proofs/ui` (state + percent model, `percent <= 100`): `None` entry ⇒ `None` badge, `Downloading(p)` carries exactly the percent |
@@ -480,7 +481,7 @@ remains green (274 verified / 0 errors, 12 pairs); `REVIEW.md` now carries the
 current ACCEPT.
 
 What green proves, per the gate definition above: each frozen `candidate.rs`
-verifies under the pinned Verus (`0.2026.11.02.8bf68ee`, 277 verified / 0
+verifies under the pinned Verus (`0.2026.11.02.8bf68ee`, 289 verified / 0
 errors across the 12 pairs); Lynette `additions` accepts it; `trust_scan.py`
 finds no `assume`/`admit`/`external_body`/`axiom`/`assume_specification`/
 `unimplemented!`; the pair matches `FREEZE.sha256`; and `spec_guard.py` plus
@@ -546,3 +547,40 @@ has signed `v0.1.1` for this freeze (`freeze_sha256`
 `gate_sha256` `9ce7fb1a802dc0600d1dee8cc5df85919a85cd6da3111fb47b2ba22d6e4889ea`).
 The earlier freeze (`a561191c…` / `7a9f0f1f…`) remains recorded as previously
 ACCEPTED; the current ACCEPT covers v0.1.1 and the release gate now passes.
+
+### Release freeze 2026-11-02 v0.1.2
+
+Twelve pairs are frozen at version `0.1.2`: `proofs/FREEZE.sha256` =
+`bfbfbd84561bda4c1c46ab47a80b51bdb89455d29ba016d08082f5c52875cd56`
+(37 files), `gate_sha256` =
+`19c01a9b464d244af51d8e290535a2120a5d9ffb0650c47ac206686e972edd90`.
+**289 functions verified / 0 errors** (ui 65 -> 77 with the new
+`expand_import_path` obligation; audio 15); Lynette `additions` and `compare`
+green; trust scan clean; `check-drift.sh` 21/21; the gate self-test covers all
+twelve pairs. `docs/SOURCE-FREEZE.sha256` (246 files) was regenerated for this
+tree: `084d939371cd52e07f6e543bbf6bc841d3e3a38780c2de84280f8c3488936b45`.
+
+Source delta since the previously accepted v0.1.1 freeze (all re-read; only
+the new helper is a proof change):
+
+- `crates/ui/src/pure.rs` — `expand_import_path` (v0.1.2 account fix), now
+  proven on bytes with the exact `PathBuf::join` rules; every other proven
+  function of the pair is byte-identical.
+- `crates/innertube/src/context.rs` — `sapisidhash` field order
+  `ts sapisid origin`; OUT-OF-SUBSET (SHA-1), pinned by the vector tests. This
+  is the account fix: the previous order was answered signed-out.
+- `crates/innertube/src/{auth,cookies}.rs` — quoted `SESSION_INDEX` parsing and
+  the same hash order/vector; neither file is a declared proof source.
+- `crates/ui/src/services.rs` — `import_cookie_file` expands the path through
+  `expand_import_path` (two lines); `radio_event`/`radio_fallback` unchanged.
+- `crates/ui/src/screens/account.rs`, `crates/ui/tests/live_account.rs` — new
+  import action and opt-in live test; `crates/store/tests/parity.rs` test-only.
+- `Cargo.toml`/`Cargo.lock` — workspace version `0.1.2`, repository URL.
+
+`REVIEW.md` was **not touched by the author**; the fresh independent review
+has signed `v0.1.2` for this freeze (`freeze_sha256`
+`bfbfbd84561bda4c1c46ab47a80b51bdb89455d29ba016d08082f5c52875cd56`,
+`gate_sha256` `19c01a9b464d244af51d8e290535a2120a5d9ffb0650c47ac206686e972edd90`).
+The earlier v0.1.1 freeze (`1a07e2b5…` / `9ce7fb1a…`) remains recorded as
+previously ACCEPTED; the current ACCEPT covers v0.1.2 and the release gate now
+passes.

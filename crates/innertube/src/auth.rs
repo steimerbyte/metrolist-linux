@@ -406,12 +406,12 @@ fn quoted<'a>(html: &'a str, marker: &str) -> Option<&'a str> {
     (!rest[..end].is_empty()).then_some(&rest[..end])
 }
 
+/// `"SESSION_INDEX":"0"` (quoted, as the live page writes it) or `:0`.
 fn integer(html: &str, marker: &str) -> Option<u32> {
     let start = html.find(marker)? + marker.len();
-    let digits: String = html[start..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect();
+    let rest = html.get(start..)?;
+    let rest = rest.strip_prefix('"').unwrap_or(rest);
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
     digits.parse().ok()
 }
 
@@ -656,6 +656,15 @@ mod tests {
         let identity = session_identity(secondary);
         assert_eq!(identity.data_sync_id.as_deref(), Some("DELEGATED"));
         assert_eq!(identity.auth_user, None);
+
+        // Live page shape: SESSION_INDEX is a quoted integer string.
+        let quoted = r#"{"SESSION_INDEX":"0","VISITOR_DATA":"vd"}"#;
+        assert_eq!(session_identity(quoted).auth_user.as_deref(), Some("0"));
+        let secondary_index = r#"{"SESSION_INDEX":"1"}"#;
+        assert_eq!(
+            session_identity(secondary_index).auth_user.as_deref(),
+            Some("1")
+        );
 
         assert_eq!(session_identity(""), SessionIdentity::default());
         assert_eq!(

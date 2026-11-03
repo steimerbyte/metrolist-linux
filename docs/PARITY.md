@@ -88,7 +88,7 @@ Status vocabulary:
 | Moods and genres | `ui/screens/MoodAndGenresScreen.kt` | **Done** | `crates/ui/src/screens/catalog.rs`; `crates/innertube/src/pages/moods.rs` | Grouped category chips and mood-result browse pages (playlists/albums). |
 | New releases | `ui/screens/NewReleaseScreen.kt` | **Done** | `crates/ui/src/screens/catalog.rs`; `crates/innertube/src/pages/browse.rs` | Top-level `new_releases()` shelves rendered as cards; album cards open detail, video cards play directly (no radio). |
 | YouTube browse | `ui/screens/YouTubeBrowseScreen.kt`, `BrowseScreen.kt` | **Partial** | `crates/ui/src/services.rs::load_youtube_browse`; `crates/innertube/src/pages/browse.rs` | The generic browse loader exists and is tested through the catalog screens, but there is no arbitrary-browse route/UI or URL entry. |
-| Account login, library sync | `ui/screens/LoginScreen.kt`, `viewmodels/AccountViewModel.kt`, `utils/potoken/*` | **Partial** | `crates/ui/src/screens/account.rs`, `crates/ui/src/services.rs`; `crates/innertube/src/auth.rs` (`discover_session`, `account_info`, `library_snapshot`); `crates/store/src/browser.rs` (`newest_firefox_profile`, `read_firefox_cookies`) | Cookie import from a Netscape/header/JSON file or the newest LibreWolf/Firefox profile, a private `session-cookies.txt` (`0600`) with automatic rotation, Account screen (avatar, masked contact, expiry, refresh, sync, sign out), and `library_snapshot` upserts for liked songs/albums/artists/playlists. Errors carry paths/status only. No OAuth/portal login and no PO-token provider; the only live session available on the verification host was rejected by Google as stale, so live login is not claimed. |
+| Account login, library sync | `ui/screens/LoginScreen.kt`, `viewmodels/AccountViewModel.kt`, `utils/potoken/*` | **Partial** | `crates/ui/src/screens/account.rs`, `crates/ui/src/services.rs`; `crates/innertube/src/auth.rs` (`discover_session`, `account_info`, `library_snapshot`); `crates/store/src/browser.rs` (`newest_firefox_profile`, `read_firefox_cookies`) | Cookie import from a Netscape/header/JSON file or the newest LibreWolf/Firefox profile, a private `session-cookies.txt` (`0600`) with automatic rotation, Account screen (avatar, masked contact, expiry, refresh, sync, sign out), and `library_snapshot` upserts for liked songs/albums/artists/playlists. Errors carry paths/status only. No OAuth/portal login and no PO-token provider. Live cookie login and library sync were verified on 2026-11-03 (signed-in account menu, 14 playlists / 1 album / 25 artists / 24 liked songs; session file `0600`, rotating); `SAPISIDHASH` signs `ts sapisid origin`. |
 
 ## Lyrics
 
@@ -160,7 +160,7 @@ Status vocabulary:
   anonymous podcast episode browsing, stats/Wrapped, song recognition,
   Last.fm scrobbling (live account unverified), Discord Rich Presence, and
   Listen Together rooms with host/guest sync.
-- **Partial**: account login/library sync (cookie import only; live session not verified),
+- **Partial**: account login/library sync (cookie import; live session verified),
   lyrics cache, translation streaming/prompt modes, EQ surface, loudness
   normalization (manual gain only), theme options, library sort/search,
   podcast subscriptions/show grid, arbitrary YouTube browse, remote history.

@@ -688,12 +688,12 @@ pub fn permission_warning(path: &Path) -> Option<String> {
 
 // --------------------------------------------------------------- SAPISIDHASH
 
-/// `SAPISIDHASH <ts>_<sha1 "ts origin sapisid">` — the only `Authorization`
-/// upstream sends, with `origin` = `https://music.youtube.com`.
+/// `SAPISIDHASH <ts>_<sha1 "ts sapisid origin">` — the only `Authorization`
+/// upstream sends. The order is load-bearing (see `context::sapisidhash`).
 pub fn sapisidhash(sapisid: &str, origin: &str, timestamp: u64) -> String {
     use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
-    hasher.update(format!("{timestamp} {origin} {sapisid}").as_bytes());
+    hasher.update(format!("{timestamp} {sapisid} {origin}").as_bytes());
     let digest = hasher.finalize();
     let mut hex = String::with_capacity(digest.len() * 2);
     for byte in digest {
@@ -1084,7 +1084,7 @@ mod tests {
 
     #[test]
     fn sapisidhash_matches_the_known_vector() {
-        // echo -n "1700000000 https://music.youtube.com SAPISID-value" | sha1sum
+        // echo -n "1700000000 SAPISID-value https://music.youtube.com" | sha1sum
         assert_eq!(
             sapisidhash("SAPISID-value", "https://music.youtube.com", 1_700_000_000),
             SAPISIDHASH_VECTOR
@@ -1092,7 +1092,7 @@ mod tests {
     }
 
     const SAPISIDHASH_VECTOR: &str =
-        "SAPISIDHASH 1700000000_9085cbfe999f460edcf7240cd89695a9db08ed3b";
+        "SAPISIDHASH 1700000000_d4b678dc943e8f0851e23c86ae4c55f68bb6c7b3";
 
     #[test]
     fn auth_headers_only_when_a_session_exists() {

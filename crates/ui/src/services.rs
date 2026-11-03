@@ -2328,6 +2328,8 @@ impl Services {
     }
 
     pub fn import_cookie_file(&self, path: PathBuf) {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let path = crate::pure::expand_import_path(&path.to_string_lossy(), home.as_deref());
         let result = (|| {
             let text = fs::read_to_string(&path)
                 .map_err(|error| format!("Could not read {}: {error}", path.display()))?;

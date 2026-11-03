@@ -4,7 +4,7 @@
 
 | file | sha256 (at freeze) |
 |------|--------------------|
-| crates/ui/src/services.rs | 17aab95cd8d03f63c52b02be6e6232252250bd5e1428ba09910c0b2f27804633 |
+| crates/ui/src/services.rs | 1434dc75dd41e13d276b596839716aa3bf2202198f86eebcc7a1df1a3402a3f5 |
 | crates/ui/src/app.rs | d6d8f5a17c5c1afbba1fb62203bab9b6ce3bea464b436766d628a7d5de8de7cb |
 | crates/innertube/src/lib.rs | bfa89ea531da62a31afc59bee4978d51606f9d372c72a3c325a21679650a8890 |
 
@@ -138,3 +138,18 @@ requires that id, playing state, position > 1500 ms and no pending toast).
 
 The navigation and demo-screenshot code is out of subset (UI state machine);
 no proven body moved and no proof text changed.
+
+## Re-freeze 2026-11-02 v0.1.2 (account cookie import)
+
+Reason: `Services::import_cookie_file` now expands the pasted path through
+`pure::expand_import_path` (two added lines: read `HOME`, expand). New hash is
+in the table above (`1434dc75…`); `crates/ui/src/app.rs` and
+`crates/innertube/src/lib.rs` are unchanged for v0.1.2.
+
+- `radio_event` / `radio_fallback` — byte-identical; the diff has no hunk in
+  the radio block.
+- `url_route` — unchanged (`app.rs` untouched this round).
+- `search_body` / `SearchFilter::params` — unchanged (`lib.rs` untouched).
+
+`expand_import_path` itself is proven in `proofs/ui` (it lives in `pure.rs`);
+this area only records the call site, which is out of subset.

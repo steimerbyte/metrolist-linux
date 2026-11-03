@@ -1095,6 +1095,357 @@ pub proof fn lemma_line_end(text: Seq<u8>, i: int, j: int)
     }
 }
 
+// ===== expand_import_path (v0.1.2 account fix) =====
+// A pasted import path: trim, one matching quote pair, `~`/`~/` against HOME.
+// Modelled on bytes like session_file_path; `PathBuf::join` is transcribed as
+// `path_join_spec` (the exact Unix rules, including an empty rest).
+
+pub open spec fn are_quotes(t: Seq<u8>) -> bool {
+    t.len() >= 2 && ((t[0] == 34u8 && t[t.len() - 1] == 34u8) || (t[0] == 39u8
+        && t[t.len() - 1] == 39u8))
+}
+
+pub open spec fn unquoted(t: Seq<u8>) -> Seq<u8> {
+    if are_quotes(t) {
+        t.subrange(1, (t.len() - 1) as int)
+    } else {
+        t
+    }
+}
+
+pub open spec fn trail_ws_len(t: Seq<u8>) -> int
+    decreases t.len(),
+{
+    if t.len() == 0 {
+        0
+    } else if is_ws(t[t.len() - 1]) {
+        1 + trail_ws_len(t.subrange(0, (t.len() - 1) as int))
+    } else {
+        0
+    }
+}
+
+pub open spec fn trim_hi(t: Seq<u8>) -> int {
+    if trim_start_len(t) == t.len() {
+        t.len() as int
+    } else {
+        t.len() as int - trail_ws_len(t)
+    }
+}
+
+pub open spec fn trimmed(t: Seq<u8>) -> Seq<u8> {
+    t.subrange(trim_start_len(t), trim_hi(t))
+}
+
+pub open spec fn sep_width(home: Seq<u8>) -> int {
+    if home.len() == 0 || home[home.len() - 1] == 47u8 {
+        0
+    } else {
+        1
+    }
+}
+
+pub open spec fn path_join_spec(home: Seq<u8>, rest: Seq<u8>) -> Seq<u8> {
+    if rest.len() > 0 && rest[0] == 47u8 {
+        rest
+    } else if rest.len() == 0 {
+        if home.len() == 0 || home[home.len() - 1] == 47u8 {
+            home
+        } else {
+            home.push(47u8)
+        }
+    } else if home.len() == 0 {
+        rest
+    } else if home[home.len() - 1] == 47u8 {
+        home + rest
+    } else {
+        home.push(47u8) + rest
+    }
+}
+
+pub open spec fn opt_home(home: Option<Vec<u8>>) -> Option<Seq<u8>> {
+    match home {
+        Some(bytes) => Some(bytes@),
+        None => None,
+    }
+}
+
+pub open spec fn expand_import_path_spec(input: Seq<u8>, home: Option<Seq<u8>>) -> Seq<u8> {
+    let text = unquoted(trimmed(input));
+    if text.len() == 1 && text[0] == 126u8 {
+        match home {
+            None => text,
+            Some(home) => home,
+        }
+    } else if text.len() >= 2 && text[0] == 126u8 && text[1] == 47u8 {
+        match home {
+            None => text,
+            Some(home) => path_join_spec(home, text.subrange(2, text.len() as int)),
+        }
+    } else {
+        text
+    }
+}
+
+pub fn trim_span(text: &Vec<u8>) -> (r: (usize, usize))
+    ensures
+        r.0 as int == trim_start_len(text@),
+        r.1 as int == trim_hi(text@),
+        r.0 as int <= r.1 as int,
+        r.1 as int <= text@.len(),
+{
+    let mut lead = 0;
+    while lead < text.len() && (text[lead] == 32u8 || text[lead] == 9u8
+        || text[lead] == 10u8 || text[lead] == 13u8 || text[lead] == 11u8
+        || text[lead] == 12u8)
+        invariant
+            lead <= text@.len(),
+            forall|j: int| 0 <= j < lead as int ==> is_ws(#[trigger] text@[j]),
+        decreases text@.len() - lead,
+    {
+        lead = lead + 1;
+    }
+    if lead == text.len() {
+        proof {
+            lemma_ws_prefix_split(text@, text.len() as int);
+        }
+        return (lead, lead);
+    }
+    proof {
+        lemma_ws_prefix_stops(text@, lead as int);
+    }
+    let mut end = text.len();
+    while end > lead && (text[end - 1] == 32u8 || text[end - 1] == 9u8
+        || text[end - 1] == 10u8 || text[end - 1] == 13u8 || text[end - 1] == 11u8
+        || text[end - 1] == 12u8)
+        invariant
+            lead <= end <= text@.len(),
+            forall|j: int| end as int <= j < text@.len() ==> is_ws(#[trigger] text@[j]),
+        decreases end - lead,
+    {
+        end = end - 1;
+    }
+    proof {
+        if end > 0 {
+            assert(!is_ws(text@[end as int - 1]));
+        }
+        lemma_trail_run(text@, end as int);
+    }
+    (lead, end)
+}
+
+pub fn copy_range(text: &Vec<u8>, lo: usize, hi: usize) -> (r: Vec<u8>)
+    requires
+        lo <= hi <= text.len(),
+    ensures
+        r@ == text@.subrange(lo as int, hi as int),
+{
+    let mut out: Vec<u8> = Vec::new();
+    let mut i = lo;
+    while i < hi
+        invariant
+            lo <= i <= hi <= text@.len(),
+            out@.len() == i - lo,
+            forall|j: int| 0 <= j < out@.len() ==> out@[j] == text@[lo as int + j],
+        decreases hi - i,
+    {
+        out.push(text[i]);
+        i = i + 1;
+    }
+    proof {
+        assert(out@ =~= text@.subrange(lo as int, hi as int));
+    }
+    out
+}
+
+pub fn path_join(home: &Vec<u8>, rest: &Vec<u8>) -> (r: Vec<u8>)
+    ensures
+        r@ == path_join_spec(home@, rest@),
+{
+    if rest.len() > 0 && rest[0] == 47u8 {
+        return copy_range(rest, 0, rest.len());
+    }
+    if rest.len() == 0 {
+        if home.len() == 0 {
+            return copy_range(home, 0, home.len());
+        }
+        if home[home.len() - 1] == 47u8 {
+            return copy_range(home, 0, home.len());
+        }
+        let mut out = copy_range(home, 0, home.len());
+        out.push(47u8);
+        return out;
+    }
+    if home.len() == 0 {
+        return copy_range(rest, 0, rest.len());
+    }
+    proof {
+        assert(home.len() > 0);
+    }
+    let mut out = copy_range(home, 0, home.len());
+    if home[home.len() - 1] != 47u8 {
+        out.push(47u8);
+    }
+    proof {
+        if sep_width(home@) == 1 {
+            assert(out@.len() == home@.len() + 1);
+            assert(out@[home@.len() as int] == 47u8);
+        }
+    }
+    let mut i = 0;
+    while i < rest.len()
+        invariant
+            i <= rest@.len(),
+            out@.len() == home@.len() as int + sep_width(home@) + i as int,
+            forall|j: int| 0 <= j < home@.len() ==> out@[j] == home@[j],
+            forall|j: int| 0 <= j < i as int ==> out@[home@.len() as int + sep_width(
+                home@,
+            ) + j] == rest@[j],
+            sep_width(home@) == 1 ==> out@[home@.len() as int] == 47u8,
+        decreases rest@.len() - i,
+    {
+        out.push(rest[i]);
+        i = i + 1;
+    }
+    proof {
+        if home@[home@.len() - 1] == 47u8 {
+            assert(sep_width(home@) == 0);
+            assert forall|j: int| 0 <= j < out@.len() implies out@[j] == (home@ + rest@)[j] by {
+                if j < home@.len() {
+                } else {
+                    assert(out@[j] == rest@[j - home@.len()]);
+                }
+            }
+            assert(out@ =~= home@ + rest@);
+        } else {
+            assert(sep_width(home@) == 1);
+            let prefix = home@.push(47u8);
+            assert forall|j: int| 0 <= j < out@.len() implies out@[j] == (prefix + rest@)[j] by {
+                if j < home@.len() {
+                } else if j == home@.len() {
+                } else {
+                    assert(out@[j] == rest@[j - home@.len() - 1]);
+                    assert((prefix + rest@)[j] == rest@[j - prefix.len()]);
+                }
+            }
+            assert(prefix + rest@ =~= out@);
+        }
+    }
+    out
+}
+
+pub fn expand_import_path(input: &Vec<u8>, home: Option<Vec<u8>>) -> (r: Vec<u8>)
+    ensures
+        r@ == expand_import_path_spec(input@, opt_home(home)),
+{
+    let (start, end) = trim_span(input);
+    proof {
+        assert(start as int == trim_start_len(input@));
+        assert(end as int == trim_hi(input@));
+        assert(start as int <= end as int);
+        assert(end as int <= input@.len());
+        assert(trimmed(input@) == input@.subrange(start as int, end as int));
+    }
+    let quotes = if end - start >= 2 {
+        assert(start as int + 2 <= end as int);
+        let first = input[start];
+        let last = input[end - 1];
+        (first == 34u8 && last == 34u8) || (first == 39u8 && last == 39u8)
+    } else {
+        false
+    };
+    let (qs, qe) = if quotes {
+        (start + 1, end - 1)
+    } else {
+        (start, end)
+    };
+    proof {
+        lemma_quotes_match(input@, start as int, end as int);
+        if quotes {
+            lemma_subrange_shift(input@, start as int, end as int, 1, end as int
+                - start as int - 1);
+            assert(input@.subrange(qs as int, qe as int) == input@.subrange(
+                start as int,
+                end as int,
+            ).subrange(1, (end as int - start as int) - 1));
+        }
+        assert(input@.subrange(qs as int, qe as int) == unquoted(trimmed(input@)));
+    }
+    assert(qs <= qe);
+    assert(qe <= input.len());
+    if qe - qs == 1 && input[qs] == 126u8 {
+        match home {
+            Some(bytes) => return bytes,
+            None => return copy_range(input, qs, qe),
+        }
+    }
+    if qe - qs >= 2 && input[qs] == 126u8 && input[qs + 1] == 47u8 {
+        assert(qs + 2 <= qe);
+        let tail = copy_range(input, qs + 2, qe);
+        match home {
+            Some(bytes) => return path_join(&bytes, &tail),
+            None => return copy_range(input, qs, qe),
+        }
+    }
+    copy_range(input, qs, qe)
+}
+
+
+pub proof fn lemma_quotes_match(input: Seq<u8>, start: int, end: int)
+    requires
+        0 <= start <= end <= input.len(),
+    ensures
+        are_quotes(input.subrange(start, end)) == (end - start >= 2 && ((
+        input[start] == 34u8 && input[end - 1] == 34u8) || (input[start] == 39u8
+            && input[end - 1] == 39u8))),
+{
+    let t = input.subrange(start, end);
+    if end - start >= 2 {
+        assert(t.len() == end - start);
+        assert(t[0] == input[start]);
+        assert(t[t.len() - 1] == input[end - 1]);
+    }
+}
+
+pub proof fn lemma_subrange_shift(input: Seq<u8>, lo: int, hi: int, a: int, b: int)
+    requires
+        0 <= lo <= lo + a <= lo + b <= hi <= input.len(),
+    ensures
+        input.subrange(lo + a, lo + b) == input.subrange(lo, hi).subrange(a, b),
+{
+    assert forall|i: int| 0 <= i < b - a implies #[trigger] input.subrange(
+        lo + a,
+        lo + b,
+    )[i] == input.subrange(lo, hi).subrange(a, b)[i] by {
+        assert(input.subrange(lo + a, lo + b)[i] == input[lo + a + i]);
+        assert(input.subrange(lo, hi)[a + i] == input[lo + a + i]);
+    }
+    assert(input.subrange(lo + a, lo + b) =~= input.subrange(lo, hi).subrange(a, b));
+}
+
+pub proof fn lemma_trail_run(t: Seq<u8>, i: int)
+    requires
+        0 <= i <= t.len(),
+        forall|j: int| i <= j < t.len() ==> is_ws(#[trigger] t[j]),
+        i == 0 || !is_ws(t[i - 1]),
+    ensures
+        trail_ws_len(t) == t.len() - i,
+    decreases t.len() - i,
+{
+    if i == t.len() {
+        if t.len() > 0 {
+            assert(!is_ws(t[t.len() - 1]));
+        }
+    } else {
+        assert(is_ws(t[t.len() - 1]));
+        let inner = t.subrange(0, t.len() - 1);
+        assert forall|j: int| i <= j < inner.len() implies is_ws(#[trigger] inner[j]) by {
+            assert(inner[j] == t[j]);
+        }
+        lemma_trail_run(inner, i);
+    }
+}
+
 pub fn cookie_import_format(text: &Vec<u8>) -> (r: CookieImportFormat)
     ensures
         r == cookie_format_spec(text@),

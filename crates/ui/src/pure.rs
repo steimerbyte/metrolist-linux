@@ -581,6 +581,32 @@ pub fn session_file_path(data_dir: &Path) -> PathBuf {
     data_dir.join("session-cookies.txt")
 }
 
+/// A pasted import path: surrounding whitespace and one pair of quotes are
+/// stripped, and a leading `~/` (or bare `~`) expands against `home`. A path
+/// with no `$HOME` is returned unchanged so the caller's error names it as typed.
+pub fn expand_import_path(input: &str, home: Option<&Path>) -> PathBuf {
+    let text = input.trim();
+    let text = text
+        .strip_prefix('"')
+        .and_then(|inner| inner.strip_suffix('"'))
+        .or_else(|| {
+            text.strip_prefix('\'')
+                .and_then(|inner| inner.strip_suffix('\''))
+        })
+        .unwrap_or(text);
+    if text == "~" {
+        return home
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from(text));
+    }
+    if let Some(rest) = text.strip_prefix("~/") {
+        if let Some(home) = home {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(text)
+}
+
 /// Shape of a cookie file the user picked; used only for messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CookieImportFormat {
@@ -1310,6 +1336,28 @@ mod tests {
         assert_eq!(
             session_file_path(Path::new("/data")),
             PathBuf::from("/data/session-cookies.txt")
+        );
+        let home = Path::new("/home/user");
+        assert_eq!(
+            expand_import_path("  ~/Downloads/cookies.txt  ", Some(home)),
+            PathBuf::from("/home/user/Downloads/cookies.txt")
+        );
+        assert_eq!(
+            expand_import_path("\"/home/user/cookies.txt\"", Some(home)),
+            PathBuf::from("/home/user/cookies.txt")
+        );
+        assert_eq!(
+            expand_import_path("'/home/user/cookies.txt'", Some(home)),
+            PathBuf::from("/home/user/cookies.txt")
+        );
+        assert_eq!(
+            expand_import_path("/absolute/cookies.txt", Some(home)),
+            PathBuf::from("/absolute/cookies.txt")
+        );
+        assert_eq!(expand_import_path("~", Some(home)), home.to_path_buf());
+        assert_eq!(
+            expand_import_path("~/Downloads/cookies.txt", None),
+            PathBuf::from("~/Downloads/cookies.txt")
         );
         assert_eq!(
             cookie_import_format("# Netscape HTTP Cookie File\n.youtube.com\tTRUE"),

@@ -59,23 +59,24 @@ dist/SHA256SUMS
 ## Validated artifact (2026-11-03)
 
 ```text
-dist/Metrolist-Desktop-0.1.1-x86_64.AppImage
-size:   120732152 bytes
-sha256: 01b40cf28fc68819973ea8885903591ba0aa32af84158dff65e223d01e4da34e
+dist/Metrolist-Desktop-0.1.2-x86_64.AppImage
+size:   120723960 bytes
+sha256: c23bd3618f37aa874babb32f68ff30340c81d54ad8ea6a3f58e673c64b270d46
 app:    max GLIBC_2.35 (container build)
 mpv:    0.35.1, max GLIBC_2.34
 ```
 
 Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (246 files, self-sha
-`345a3ebb…`, `sha256sum -c` passes) in `rust:1.99.1-bookworm`; the shipped
+`084d9393…`, `sha256sum -c` passes) in `rust:1.99.1-bookworm`; the shipped
 container binary is `build/target-container/release/metrolist`, sha256
-`d10f6fd445354d444ced7384dafab488d0a180c20c3e31703f06f6e82bf7547d`
-(61,002,632 bytes). The host binary is only a local reference and has a newer
+`d8e3f3aebcccb432d7e4d10d9fdd572a18854aaae8585f965a4e1eb6e18012ec`
+(61,001,480 bytes). The host binary is only a local reference and has a newer
 GLIBC floor. `dist/SNAPSHOT.txt` records the checks, mpv bundle and runtime
 dependencies.
 
-The 0.1.0 build (`b4b49387…`, container `ff8cfa91…`) stays recorded at tag
-`v0.1.0`; it is superseded and not rebuilt.
+Earlier builds stay at their tags and are not rebuilt: 0.1.1 (`01b40cf2…`,
+container `d10f6fd4…`) at tag `v0.1.1`, 0.1.0 (`b4b49387…`, container
+`ff8cfa91…`) at tag `v0.1.0`.
 
 Equivalent explicit commands:
 

@@ -797,6 +797,207 @@ pub open spec fn expiry_rank(hint: ExpiryHint) -> int {
     }
 }
 
+pub open spec fn are_quotes(t: Seq<u8>) -> bool {
+    t.len() >= 2 && ((t[0] == 34u8 && t[t.len() - 1] == 34u8) || (t[0] == 39u8
+        && t[t.len() - 1] == 39u8))
+}
+
+pub open spec fn unquoted(t: Seq<u8>) -> Seq<u8> {
+    if are_quotes(t) {
+        t.subrange(1, (t.len() - 1) as int)
+    } else {
+        t
+    }
+}
+
+pub open spec fn trail_ws_len(t: Seq<u8>) -> int
+    decreases t.len(),
+{
+    if t.len() == 0 {
+        0
+    } else if is_ws(t[t.len() - 1]) {
+        1 + trail_ws_len(t.subrange(0, (t.len() - 1) as int))
+    } else {
+        0
+    }
+}
+
+pub open spec fn trim_hi(t: Seq<u8>) -> int {
+    if trim_start_len(t) == t.len() {
+        t.len() as int
+    } else {
+        t.len() as int - trail_ws_len(t)
+    }
+}
+
+pub open spec fn trimmed(t: Seq<u8>) -> Seq<u8> {
+    t.subrange(trim_start_len(t), trim_hi(t))
+}
+
+pub open spec fn sep_width(home: Seq<u8>) -> int {
+    if home.len() == 0 || home[home.len() - 1] == 47u8 {
+        0
+    } else {
+        1
+    }
+}
+
+pub open spec fn path_join_spec(home: Seq<u8>, rest: Seq<u8>) -> Seq<u8> {
+    if rest.len() > 0 && rest[0] == 47u8 {
+        rest
+    } else if rest.len() == 0 {
+        if home.len() == 0 || home[home.len() - 1] == 47u8 {
+            home
+        } else {
+            home.push(47u8)
+        }
+    } else if home.len() == 0 {
+        rest
+    } else if home[home.len() - 1] == 47u8 {
+        home + rest
+    } else {
+        home.push(47u8) + rest
+    }
+}
+
+pub open spec fn opt_home(home: Option<Vec<u8>>) -> Option<Seq<u8>> {
+    match home {
+        Some(bytes) => Some(bytes@),
+        None => None,
+    }
+}
+
+pub open spec fn expand_import_path_spec(input: Seq<u8>, home: Option<Seq<u8>>) -> Seq<u8> {
+    let text = unquoted(trimmed(input));
+    if text.len() == 1 && text[0] == 126u8 {
+        match home {
+            None => text,
+            Some(home) => home,
+        }
+    } else if text.len() >= 2 && text[0] == 126u8 && text[1] == 47u8 {
+        match home {
+            None => text,
+            Some(home) => path_join_spec(home, text.subrange(2, text.len() as int)),
+        }
+    } else {
+        text
+    }
+}
+
+pub fn trim_span(text: &Vec<u8>) -> (r: (usize, usize))
+    ensures
+        r.0 as int == trim_start_len(text@),
+        r.1 as int == trim_hi(text@),
+        r.0 as int <= r.1 as int,
+        r.1 as int <= text@.len(),
+{
+    let mut lead = 0;
+    while lead < text.len() && (text[lead] == 32u8 || text[lead] == 9u8
+        || text[lead] == 10u8 || text[lead] == 13u8 || text[lead] == 11u8
+        || text[lead] == 12u8)
+        decreases text@.len() - lead,
+    {
+        lead = lead + 1;
+    }
+    if lead == text.len() {
+        return (lead, lead);
+    }
+    let mut end = text.len();
+    while end > lead && (text[end - 1] == 32u8 || text[end - 1] == 9u8
+        || text[end - 1] == 10u8 || text[end - 1] == 13u8 || text[end - 1] == 11u8
+        || text[end - 1] == 12u8)
+        decreases end - lead,
+    {
+        end = end - 1;
+    }
+    (lead, end)
+}
+
+pub fn copy_range(text: &Vec<u8>, lo: usize, hi: usize) -> (r: Vec<u8>)
+    requires
+        lo <= hi <= text.len(),
+    ensures
+        r@ == text@.subrange(lo as int, hi as int),
+{
+    let mut out: Vec<u8> = Vec::new();
+    let mut i = lo;
+    while i < hi
+        decreases hi - i,
+    {
+        out.push(text[i]);
+        i = i + 1;
+    }
+    out
+}
+
+pub fn path_join(home: &Vec<u8>, rest: &Vec<u8>) -> (r: Vec<u8>)
+    ensures
+        r@ == path_join_spec(home@, rest@),
+{
+    if rest.len() > 0 && rest[0] == 47u8 {
+        return copy_range(rest, 0, rest.len());
+    }
+    if rest.len() == 0 {
+        if home.len() == 0 {
+            return copy_range(home, 0, home.len());
+        }
+        if home[home.len() - 1] == 47u8 {
+            return copy_range(home, 0, home.len());
+        }
+        let mut out = copy_range(home, 0, home.len());
+        out.push(47u8);
+        return out;
+    }
+    if home.len() == 0 {
+        return copy_range(rest, 0, rest.len());
+    }
+    let mut out = copy_range(home, 0, home.len());
+    if home[home.len() - 1] != 47u8 {
+        out.push(47u8);
+    }
+    let mut i = 0;
+    while i < rest.len()
+        decreases rest@.len() - i,
+    {
+        out.push(rest[i]);
+        i = i + 1;
+    }
+    out
+}
+
+pub fn expand_import_path(input: &Vec<u8>, home: Option<Vec<u8>>) -> (r: Vec<u8>)
+    ensures
+        r@ == expand_import_path_spec(input@, opt_home(home)),
+{
+    let (start, end) = trim_span(input);
+    let quotes = if end - start >= 2 {
+        let first = input[start];
+        let last = input[end - 1];
+        (first == 34u8 && last == 34u8) || (first == 39u8 && last == 39u8)
+    } else {
+        false
+    };
+    let (qs, qe) = if quotes {
+        (start + 1, end - 1)
+    } else {
+        (start, end)
+    };
+    if qe - qs == 1 && input[qs] == 126u8 {
+        match home {
+            Some(bytes) => return bytes,
+            None => return copy_range(input, qs, qe),
+        }
+    }
+    if qe - qs >= 2 && input[qs] == 126u8 && input[qs + 1] == 47u8 {
+        let tail = copy_range(input, qs + 2, qe);
+        match home {
+            Some(bytes) => return path_join(&bytes, &tail),
+            None => return copy_range(input, qs, qe),
+        }
+    }
+    copy_range(input, qs, qe)
+}
+
 pub fn cookie_import_format(text: &Vec<u8>) -> (r: CookieImportFormat)
     ensures
         r == cookie_format_spec(text@),

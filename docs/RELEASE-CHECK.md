@@ -4,11 +4,11 @@ Release gate for the Rust port (repo root; run every command from there).
 Verdict: **RELEASE READY**.
 
 - Toolchain: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`, edition 2021, GPL-3.0-only,
-  workspace version `0.1.1`.
+  workspace version `0.1.2`.
 - Workspace: `crates/{core,innertube,lyrics,store,downloads,audio,integrations,ui}`,
   binary `metrolist` (`crates/ui/src/main.rs`).
-- The tree described here is the published source of the v0.1.1 release
-  (v0.1.0 remains published at tag `v0.1.0`).
+- The tree described here is the published source of the v0.1.2 release
+  (v0.1.1 and v0.1.0 remain published at their tags).
 
 ## Gate commands
 
@@ -16,7 +16,7 @@ Verdict: **RELEASE READY**.
 |---|---|
 | `cargo fmt --all -- --check` | pass (no diff) |
 | `cargo check --workspace --locked` | pass |
-| `cargo test --workspace --no-fail-fast` | pass — **715 passed, 0 failed, 30 ignored** (re-measured for v0.1.1) |
+| `cargo test --workspace --no-fail-fast` | pass — **715 passed, 0 failed, 31 ignored** (re-measured for v0.1.2) |
 | `cargo clippy --workspace --all-targets --locked` | pass (exit 0) — 17 distinct warning sites, all in `ml-ui` (clippy summary: 14 lib + 15 lib test, 13 duplicated), listed below |
 | `cargo build --release --locked` | pass |
 | `target/release/metrolist --smoke 120` | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` — exit 0 |
@@ -31,7 +31,7 @@ on this host `DISPLAY=:0`, `WAYLAND_DISPLAY=wayland-0`, wgpu backend Vulkan on
 
 Counts are from `cargo test -p <package> --locked` on the earlier 313-test
 revision; the workspace-wide re-measurement after the shutdown/leak fix is
-**715 passed / 0 failed / 30 ignored** for v0.1.1 (the per-package split below
+**715 passed / 0 failed / 31 ignored** for v0.1.2 (the per-package split below
 was not re-measured and is informational only).
 
 | Package | Binaries | Passed | Failed | Ignored |
@@ -60,37 +60,46 @@ Host reference binary, built 14:05 from an **earlier** revision on CachyOS
 - `sha256sum target/release/metrolist`:
   `d2ee934fc1872a491c43a9293f0f416da38b94955d4f1b4a539624efe63b5aee`
 
-The shipped container build for 0.1.1 is
-`build/target-container/release/metrolist`: 61,002,632 bytes, sha256
-`d10f6fd445354d444ced7384dafab488d0a180c20c3e31703f06f6e82bf7547d`.
+The shipped container build for 0.1.2 is
+`build/target-container/release/metrolist`: 61,001,480 bytes, sha256
+`d8e3f3aebcccb432d7e4d10d9fdd572a18854aaae8585f965a4e1eb6e18012ec`.
 
 ## Shipped artifact
 
 The AppImage is the container build from the tree frozen in
-`docs/SOURCE-FREEZE.sha256` (246 files, self-sha256 `345a3ebb…`,
+`docs/SOURCE-FREEZE.sha256` (246 files, self-sha256 `084d9393…`,
 `sha256sum -c` passes), recorded in `dist/SNAPSHOT.txt` and `docs/BUILD.md`:
 
 ```text
-dist/Metrolist-Desktop-0.1.1-x86_64.AppImage
-size:   120732152 bytes (115.1 MiB)
-sha256: 01b40cf28fc68819973ea8885903591ba0aa32af84158dff65e223d01e4da34e
+dist/Metrolist-Desktop-0.1.2-x86_64.AppImage
+size:   120723960 bytes (115.1 MiB)
+sha256: c23bd3618f37aa874babb32f68ff30340c81d54ad8ea6a3f58e673c64b270d46
 app:    max GLIBC_2.35   mpv 0.35.1, max GLIBC_2.34
 ```
 
 `sha256sum -c dist/SHA256SUMS` passes. Do not publish the host binary: it needs
 a newer glibc than the AppImage's Debian 12 / Ubuntu 24.04 floor.
 
-For the record, v0.1.0 (tag `v0.1.0`, commit `cc2428b`) shipped
+For the record, the earlier releases stay at their tags and are not rebuilt:
+v0.1.1 (`v0.1.1`, commit `47eadbb`) shipped
+`Metrolist-Desktop-0.1.1-x86_64.AppImage`, 120,732,152 bytes, sha256
+`01b40cf28fc68819973ea8885903591ba0aa32af84158dff65e223d01e4da34e`; v0.1.0
+(`v0.1.0`, commit `cc2428b`) shipped
 `Metrolist-Desktop-0.1.0-x86_64.AppImage`, 120,732,152 bytes, sha256
-`b4b493874982982c7c4f8a7d81b20f4626865ae91e094111a610484dafc088ba`; it is
-superseded by 0.1.1 and not rebuilt.
+`b4b493874982982c7c4f8a7d81b20f4626865ae91e094111a610484dafc088ba`.
 
-Release verification of this 0.1.1 file (also installed at
+Release verification of this 0.1.2 file (also installed at
 `~/AppImages/metrolist_desktop.appimage`, mode 755, same size and sha256):
 
+- **Account login**: `SAPISIDHASH` now hashes `ts sapisid origin` (the old
+  `ts origin sapisid` order is answered with a signed-out 200) and the quoted
+  `SESSION_INDEX` is parsed. A live masked account (S\*\*\*r) signed in, synced
+  14 playlists / 24 songs / 1 album / 25 artists; the session file is `0600`
+  with 27 cookies and the Account screen shows signed in from the saved
+  session. No cookie values or account screenshots are published.
 - Clean environment, Wayland: `--appimage-extract-and-run --smoke 120` →
   `SMOKE_OK frames=120 backend=Vulkan home_sections=2`; vinyl player screenshot
-  and Settings at 405/1100.
+  and Settings at 405/1100 still pass.
 - Audio mute fix: a seeded WirePlumber stream mute is cleared by the engine
   (the v0.1.0 control stayed muted in the same harness); an explicit user
   "test mute" still mutes.
@@ -100,8 +109,26 @@ Release verification of this 0.1.1 file (also installed at
   smoke and SIGTERM; SIGKILL leaves 0 children and the next launch sweeps
   stale sockets.
 - Tests: `cargo test --workspace --no-fail-fast` → 715 passed / 0 failed /
-  30 ignored. Proofs: 12 pairs, 277 functions verified, 0 errors (freeze
-  `1a07e2b5…`, gate `9ce7fb1a…`, audio 12 → 15 functions).
+  31 ignored. Proofs: 12 pairs, 289 functions verified, 0 errors (freeze
+  `bfbfbd84…`, gate `19c01a9b…`, ui 65 → 77).
+
+## Changes in 0.1.2
+
+- **Account fix** (`crates/innertube/src/{context,cookies}.rs`): `SAPISIDHASH`
+  now hashes `ts sapisid origin`; the old `ts origin sapisid` order is answered
+  with a signed-out 200. Both copies and their vector tests are updated. In the
+  proof gate this is OUT-OF-SUBSET and test-pinned (SHA-1 + formatting), as
+  recorded in `proofs/stream/SOURCE.md`.
+- `crates/innertube/src/auth.rs`: `SESSION_INDEX` is parsed from the live
+  quoted shape (`"SESSION_INDEX":"0"` as well as `:0`), with tests.
+- `crates/ui/src/pure.rs::expand_import_path`: trims whitespace and one quote
+  pair, expands `~` / `~/` against `HOME`; `Services::import_cookie_file` and
+  the new "Sign in with cookies.txt" action in `screens/account.rs` use it. The
+  helper is now a proven obligation (`proofs/ui`, 77 verified).
+- `crates/ui/tests/live_account.rs`: opt-in live import/sync test (ignored by
+  default); `crates/store/tests/parity.rs` wall-clock flake fix is test-only.
+- Tests: `cargo test --workspace --no-fail-fast` → 715 passed / 0 failed / 31
+  ignored. Proofs: 12 pairs, 289 functions verified, 0 errors.
 
 ## Changes in 0.1.1
 
@@ -215,7 +242,7 @@ and fake literals in its test module (`SAPISID=session`, `SAPISID=abc`,
 `docs/SOURCE-FREEZE.sha256` — 246 sorted `sha256sum` lines covering every file
 under `crates/` plus root `Cargo.toml` and `Cargo.lock`
 (`sha256sum docs/SOURCE-FREEZE.sha256` =
-`345a3ebb21a15064ca99c1cbbc77c8bbc94f53a8c672b2ecd3dd9a80eebb0485`).
+`084d939371cd52e07f6e543bbf6bc841d3e3a38780c2de84280f8c3488936b45`).
 This manifest is for packaging provenance, not the Verus/proof freeze in
 `proofs/FREEZE.sha256`.
 

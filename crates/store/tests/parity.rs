@@ -1004,7 +1004,16 @@ fn firefox_cookie_import_rejects_a_non_cookie_database_and_survives_locking() {
     };
     let error = ml_store::read_firefox_cookies_at(&profile, 1_800_000_000).unwrap_err();
     assert!(matches!(error, MlError::NotFound(_)), "{error:?}");
-    assert!(!format!("{error}").contains("42"));
+    // Exact message: the temp path is included, and its epoch-ms digits can
+    // contain any marker we might grep for (a "42" assertion failed on wall
+    // clock alone), so pin the whole string instead of a substring.
+    assert_eq!(
+        format!("{error}"),
+        format!(
+            "not found: {} is not a Firefox cookie database",
+            db.display()
+        )
+    );
 
     // A missing file is an error, not a panic.
     let missing = ml_store::FirefoxProfile {

@@ -112,13 +112,13 @@ fn signed_out(
     );
     ui.add(
         egui::TextEdit::singleline(&mut state.imported_path)
-            .hint_text("/home/you/Documents/cookies.txt")
+            .hint_text("~/Downloads/cookies.txt")
             .desired_width(width),
     );
     ui.add_space(DP8);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = DP8;
-        if filled_button(ui, theme, Some("upload_file"), "Import file").clicked() {
+        if filled_button(ui, theme, Some("upload_file"), "Sign in with cookies.txt").clicked() {
             actions.push(AccountAction::ImportFile);
         }
         let profile = state.browser_profile.as_deref();
