@@ -11,7 +11,7 @@ use crate::state::{LibraryData, Load};
 use crate::theme::{Theme, DP16, DP24, DP8};
 use crate::widgets::{section_header, song_row, SongRowOptions};
 
-use super::{error_block, skeleton_rows, Intent};
+use super::{artist_intent, error_block, skeleton_rows, Intent};
 
 /// History tab / History route: grouped rows, newest group first.
 pub fn show(
@@ -112,6 +112,12 @@ pub fn entries_block(
                 });
             } else if response.radio.as_ref().is_some_and(|radio| radio.clicked()) {
                 intents.push(Intent::StartRadio(song.clone()));
+            } else if response
+                .artist
+                .as_ref()
+                .is_some_and(|artist| artist.clicked())
+            {
+                intents.extend(artist_intent(song));
             } else if response.row.clicked() {
                 intents.push(Intent::Play {
                     songs: songs.clone(),

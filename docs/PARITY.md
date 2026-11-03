@@ -1,6 +1,6 @@
 # Feature parity: Android → Linux
 
-Status snapshot: 2026-11-02. This is a matrix of what the Rust port actually
+Status snapshot: 2026-11-03. This is a matrix of what the Rust port actually
 does, read out of the implementation and its tests — not a roadmap. If a row
 says **Done**, the code path exists and is exercised by the named test; if it
 says **Partial**, the note states the limit.
@@ -28,6 +28,7 @@ Status vocabulary:
 | Gapless playback / prefetch | `playback/MusicService.kt` | **Done** | `crates/audio/src/engine.rs` (`--gapless-audio`, `--prefetch-playlist`), `controller.rs::prefetch_next`; `controller.rs` tests | End-of-file advances the queue pointer without reloading. Clicking the queue entry that is already loaded is a no-op (or resumes when paused) instead of restarting mpv; the old reload measured ~0.47 s to the next audio frame. |
 | Stream quality selection | `AudioQualityKey`, `FormatEntity` | **Partial** | `crates/core/src/settings.rs`, `crates/innertube/src/player.rs::select_format` | Three levels (Auto/Low/High). No per-itag or per-codec picker. |
 | URL cache and expiry | `playback/StreamUrlCache.kt` | **Done** | `crates/innertube/src/stream.rs`; Verus `proofs/media` (`is_expired`) | In-memory per `(video_id, quality)` with a 300 s safety margin. Not persisted to disk. |
+| Player transport and now-playing links | `ui/player/PlayerScreen.kt`, `ui/player/Queue.kt` | **Done** | `crates/ui/src/screens/player.rs`, `crates/ui/src/widgets/controls.rs`, `crates/ui/src/app.rs` (`PlayerAction::{StartRadio,OpenArtist}`) | Radio button immediately right of Repeat starts the existing `next` radio queue and shows an active dot for a `QueueSource::Radio` queue. The artist byline (and every `SongRowResponse` artist line, first artist with an id) opens `Route::Artist`; rows without an artist channel id stay plain text and keep the row play action. The timeline is an animated `progress_slider`: frame-rate-independent fill/thumb, the thumb follows the pointer and one seek is sent on release, hover/drag time bubble, buffering pulse, real position only; click/drag mapping preserves the previous ±8 dp track geometry. |
 | Playback error report | `ui/player/PlaybackError.kt` | **Partial** | `crates/ui/src/app.rs` (toast + `playback_error`), `crates/ui/src/screens/player.rs` | Error text is shown in-app; there is no copyable diagnostics dialog. |
 | Background playback | `MusicService` foreground service | **Partial** | `crates/ui/src/desktop.rs`; `crates/ui/src/screens/settings.rs` | Hiding the window from the tray keeps audio playing; closing/quitting stops playback. No separate daemon. |
 | Bluetooth resume, audio focus, offload, keep-screen-on | `MusicService`, prefs | **N/A** | — | Desktop audio stack (PipeWire/PulseAudio) owns routing and focus. |
@@ -60,9 +61,10 @@ Status vocabulary:
 | Liked songs | `db/`, `ui/screens/library/*` | **Done** | `crates/store/src/library.rs`; `crates/store/tests/store.rs`; `crates/ui/src/screens/liked.rs` | Toggle from the player; `Liked` route and Library tab. |
 | Library membership ("add to library") | `db/entities/*` | **Done** | `crates/store/src/song.rs`, `crates/ui/src/app.rs::ToggleLibrary` | Separate from the like flag, as upstream. |
 | Library tabs: songs/albums/artists/playlists/downloads/history | `ui/screens/library/*` | **Done** | `crates/ui/src/screens/library.rs`, `state.rs::LibTab` | Albums/artists are derived from songs in the library. A header row above the tabs opens Your stats. |
-| Library sort | `LibrarySortKind` prefs | **Partial** | `crates/core/src/settings.rs::LibrarySort`, `crates/ui/src/app.rs` (`load_library(self.settings.library_sort)`) | Four modes (recently added, alphabetical, most played, artist) are applied to every library load, but no screen exposes a control, so only the default is reachable. |
+| Library sort | `LibrarySortKind` prefs | **Done** | `crates/ui/src/pure.rs` (`SortMode`, `sort_songs`/`sort_albums`/`sort_artists`/`sort_playlists`), `crates/ui/src/screens/library.rs`, `crates/ui/src/state.rs::LibraryState::sort` | A compact "Sort: <mode>" chip above each list: Recently added (default), Title, Artist, Album, Duration as appropriate. Display-only: the loaded/stored order is never mutated, ties keep the store order, missing timestamps/artists/albums/durations sort last. The initial load still asks the store for `settings.library_sort`; the chip applies its own display order on top. |
 | Local library search/filter | `ui/screens/search/LocalSearchScreen.kt` | **Partial** | `crates/store/src/{library,song,album,artist,playlist}.rs` (`search_library`); `crates/store/tests/parity.rs` | Store side complete: songs/albums/artists/playlists in one `LibraryPage`, Unicode case folding (`ml_fold`, so `MÜLLER` finds `müller`), literal `%`/`_`, deterministic order. No UI search box yet. |
 | Local playlists: create, rename, delete, add/remove, move, play, download | `ui/screens/playlist/LocalPlaylistScreen.kt`, `ui/menu/PlaylistMenu.kt` | **Done** | `crates/store/src/playlist.rs`; `crates/ui/src/screens/local_playlist.rs`; `crates/ui/tests/playlist_crud.rs` | Move up/down and remove per row; positions stay dense (`store.rs` test). |
+| Playlist track order | `ui/screens/playlist/PlaylistScreen.kt` | **Done** | `crates/ui/src/pure.rs` (`PlaylistOrder`, `playlist_songs`), `crates/ui/src/screens/{detail,local_playlist}.rs` | Playlist and local-playlist pages offer Default (stored order), Recently added, Title, Artist and Duration. Play/Shuffle consume the sorted copy with the matching index; rearranging controls stay on stored indices and are hidden while a sort is active. Songs present in a playlist with no timestamps keep the stored order. |
 | Playlist bookmarks | `db/entities/PlaylistEntity.kt` | **Partial** | `crates/store/src/library.rs` (`set_bookmark`, `bookmark`, `bookmarked_ids`, `bookmarks_page`); `playlist.rs` | Store side covers albums, artists and playlists uniformly; no UI. |
 | Auto / Top / Cache / Uploaded playlists | `AutoPlaylistScreen.kt`, `TopPlaylistScreen.kt`, `CachePlaylistScreen.kt` | **Partial** | `crates/store/src/library.rs` (`AutoPlaylist`, `auto_playlist`, `recently_played`) | Liked / Recently played / Most played / Library are queries, not materialised playlists (upstream's weekly/monthly sync needs no scheduler this way). Downloaded is not offered: the manifest lives in `ml-downloads`, outside this crate. No UI. |
 | History (local) | `ui/screens/HistoryScreen.kt`, `db/entities/Event.kt` | **Partial** | `crates/store/src/history.rs`; `crates/ui/src/screens/history.rs`; `crates/ui/src/state.rs::HistoryPending`; `crates/ui/tests/history_duration.rs` | Plays are recorded on track change/end with accumulated playback duration (pause-aware, seek-jump filtered, clamped to track length), grouped by period bucket. Historical rows written before this fix carry `play_time=0` and cannot be backfilled. No clear/export action. |
@@ -122,6 +124,7 @@ Status vocabulary:
 |---|---|---|---|---|
 | Theme modes and seed colour | `ui/theme/*`, `ui/screens/settings/ThemeScreen.kt` | **Partial** | `crates/ui/src/theme/*`, `screens/settings.rs`, `crates/core/src/settings.rs::ThemeMode` | System/Light/Dark/Pure black, 6 seed presets plus an sRGB picker; M3 roles from `material-colors` SPEC_2025/TonalSpot. No density, player/mini-player style or slider style options. |
 | Dynamic colour | `ThemeScreen.kt` (Android 12+) | **Not ported** | `crates/core/src/settings.rs::dynamic_accent` | Flag and toggle exist; the portal reader is not implemented, the UI says so, and the seed colour is used. No album-art accent. |
+| Motion and animations | — | **Done** | `crates/ui/src/motion.rs`; `crates/ui/src/theme/mod.rs`; `crates/ui/src/app.rs` (`METROLIST_REDUCE_MOTION`); `crates/ui/src/screens/settings.rs`; `crates/ui/src/screens/search.rs` (`pill_geometry`); `docs/MOTION.md` | One Material 3 token/easing set (0.10–0.25 s steps, easing curves, pill/scale geometry) shared by route, player, dialog, mini player, toast, search, lyrics, skeleton and equalizer animation and by hover/press/focus state layers; `Context::animate_bool_with_time_and_easing` is the frame-rate-independent state store. Reduce motion (Settings toggle or `METROLIST_REDUCE_MOTION=1`) snaps bool animations and disables scroll animation. Tests cover easing endpoints and monotonicity, tint steps, geometry endpoints, the reduced-motion snap and that a finished animation stops requesting repaints. `egui_animate` 0.6 and `blinc_animation` 0.5.1 were evaluated and **not** adopted (measured reasons in `docs/MOTION.md`); the f32 helpers, `motion.rs` and `pill_geometry` are OUT-OF-SUBSET for the proof gate. |
 | Settings surface | `ui/screens/settings/*` | **Partial** | `crates/ui/src/screens/settings.rs` | Appearance, playback (quality/timer/EQ/device/speed), content (language/country), network (proxy), lyrics (providers/romanize/translation/offset), integrations (Last.fm credentials/queue, Discord IPC), desktop (notifications, MPRIS/tray status), storage, about. Android-only groups and AI/backup pages are absent. |
 | Content language/country | `ContentSettings.kt` | **Done** | `screens/settings.rs`, `crates/ui/src/services.rs` | Applied to the InnerTube context; changes take effect on the next launch. |
 | Proxy | `PrivacySettings.kt` | **Done** | `crates/core/src/settings.rs::ProxyConfig`, `screens/settings.rs` | Applied on the next launch; the password is stored in plain JSON until a keyring milestone. |
@@ -152,9 +155,10 @@ Status vocabulary:
 ## Summary
 
 - **Done**: streaming and playback, gapless queue, downloads/offline (minus
-  byte-resume), library/likes/playlists, local history, LRC/TTML parsing,
+  byte-resume), library/likes/playlists, library and playlist sort
+  (display-only), local history, LRC/TTML parsing,
   LRCLIB/KuGou lyrics, synced lyrics display/romanization/translation/offset,
-  home/search/album/artist/playlist pages, crossfade,
+  home/search/album/artist/playlist pages, the motion system, crossfade,
   skip silence, speed, sleep timer/fade, output device with auto fallback,
   MPRIS/tray/single-instance/notifications, charts/moods/new releases,
   anonymous podcast episode browsing, stats/Wrapped, song recognition,
@@ -162,7 +166,8 @@ Status vocabulary:
   Listen Together rooms with host/guest sync.
 - **Partial**: account login/library sync (cookie import; live session verified),
   lyrics cache, translation streaming/prompt modes, EQ surface, loudness
-  normalization (manual gain only), theme options, library sort/search,
+  normalization (manual gain only), theme options, local library search
+  (store query only, no UI box),
   podcast subscriptions/show grid, arbitrary YouTube browse, remote history.
 - **Not ported**: Listen Together guest queue suggestions and explicit host transfer,
   backup/import/export, runtime i18n, updater.

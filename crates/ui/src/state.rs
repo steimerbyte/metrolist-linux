@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use ml_audio::{AudioDevice, SleepTimer};
 use ml_core::{
-    Album, AlbumPage, ArtistItem, ArtistPage, HomeFeed, HomeSection, LibrarySort, PlaylistPage,
-    SearchPage, Song, YtItem,
+    Album, AlbumPage, ArtistItem, ArtistPage, HomeFeed, HomeSection, PlaylistPage, SearchPage,
+    Song, YtItem,
 };
 use ml_downloads::Download;
 use ml_innertube::auth::{AccountInfo, AuthSnapshot};
@@ -18,6 +18,7 @@ use ml_together::{
     MAX_RECONNECT_ATTEMPTS,
 };
 
+use crate::pure::{PlaylistOrder, SortMode};
 use crate::routes::Route;
 
 /// One asynchronously loaded value with loading/more/error bookkeeping.
@@ -117,6 +118,8 @@ impl PageData {
 pub struct PageState {
     pub route: Option<Route>,
     pub data: Load<PageData>,
+    /// Display order for playlist pages; reset to `Default` per route.
+    pub sort: PlaylistOrder,
 }
 
 /// Search filter row, matching the Android app's six chips.
@@ -242,7 +245,8 @@ impl LibTab {
 pub struct LibraryState {
     pub tab: LibTab,
     pub data: Load<LibraryData>,
-    pub sort: LibrarySort,
+    /// Display-only sort of the loaded library rows.
+    pub sort: SortMode,
     /// Song waiting for a playlist choice in the add-to-playlist modal.
     pub add_song: Option<Song>,
     pub new_playlist: String,
@@ -253,7 +257,7 @@ impl Default for LibraryState {
         Self {
             tab: LibTab::Songs,
             data: Load::default(),
-            sort: LibrarySort::default(),
+            sort: SortMode::default(),
             add_song: None,
             new_playlist: String::new(),
         }
@@ -273,6 +277,8 @@ pub struct LocalPlaylistState {
     pub data: Load<LocalPlaylistView>,
     pub rename: Option<String>,
     pub confirm_delete: bool,
+    /// Display-only order for the track list.
+    pub sort: PlaylistOrder,
 }
 
 /// Downloads tab: a snapshot refreshed from `DownloadManager` events.
@@ -477,6 +483,13 @@ pub fn item_song(item: &YtItem) -> Option<Song> {
         }),
         YtItem::Album(_) | YtItem::Artist(_) | YtItem::Playlist(_) => None,
     }
+}
+
+/// First artist channel id a row can open, skipping empty ids.
+pub fn song_artist_id(song: &Song) -> Option<String> {
+    song.artists
+        .iter()
+        .find_map(|artist| artist.id.clone().filter(|id| !id.is_empty()))
 }
 
 /// Where clicking a mixed item should navigate.

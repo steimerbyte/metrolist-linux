@@ -6,7 +6,7 @@ Frozen 2026-11-02. Proof: `candidate.rs`, scaffold: `original.rs`.
 
 | source | sha256 |
 |---|---|
-| crates/core/src/settings.rs | 832144ddc45a98993b437b00fc631ccdc61f939e7437276c40c80ab742b15bcc |
+| crates/core/src/settings.rs | e3a390e746ab8fb8da61d1982b57d5a02dc3ac4e8974a6390275ea9e129bec6b |
 
 ## Toolchain
 
@@ -22,3 +22,13 @@ Frozen 2026-11-02. Proof: `candidate.rs`, scaffold: `original.rs`.
   matching `ui/theme/Theme.kt`.
 
 Serde fill-from-defaults and `f32` settings are outside the subset.
+
+## Re-freeze 2026-11-03 v0.1.3 (motion settings)
+
+`crates/core/src/settings.rs` gained one serialized field,
+`pub reduce_motion: bool` (default `false`); the new hash is in the table
+above. `seed_rgb` (L154–L160) and `Settings::default().seed_color`
+(`0x00ED_5564`) are byte-identical, and this pair transcribes no `Settings`
+struct, so no obligation changed and no proof text changed. Serde
+fill-from-defaults (the new field is covered by the struct's `#[serde(default)]`)
+remains outside the subset, as does the `f32` settings block.

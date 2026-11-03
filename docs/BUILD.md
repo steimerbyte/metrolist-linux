@@ -59,24 +59,26 @@ dist/SHA256SUMS
 ## Validated artifact (2026-11-03)
 
 ```text
-dist/Metrolist-Desktop-0.1.2-x86_64.AppImage
-size:   120723960 bytes
-sha256: c23bd3618f37aa874babb32f68ff30340c81d54ad8ea6a3f58e673c64b270d46
+dist/Metrolist-Desktop-0.1.3-x86_64.AppImage
+size:   121031160 bytes
+sha256: 19307f8a6a8bf7e4359ced4bb0076871dee0419da16900d47f7fe2b690c91894
 app:    max GLIBC_2.35 (container build)
 mpv:    0.35.1, max GLIBC_2.34
 ```
 
-Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (246 files, self-sha
-`084d9393…`, `sha256sum -c` passes) in `rust:1.99.1-bookworm`; the shipped
-container binary is `build/target-container/release/metrolist`, sha256
-`d8e3f3aebcccb432d7e4d10d9fdd572a18854aaae8585f965a4e1eb6e18012ec`
-(61,001,480 bytes). The host binary is only a local reference and has a newer
+Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (247 files, self-sha
+`87f5b3a7…`, `sha256sum -c --quiet` exits 0) in `rust:1.99.1-bookworm` with
+`CARGO_BUILD_JOBS=1` (release compile 23m59s); the shipped container binary is
+`build/target-container/release/metrolist`, sha256
+`66d37d1561dd054780abea69feec58a0df4f911e1e8d2b7fa130304aca08e06a`
+(61,117,448 bytes). The host binary is only a local reference and has a newer
 GLIBC floor. `dist/SNAPSHOT.txt` records the checks, mpv bundle and runtime
 dependencies.
 
-Earlier builds stay at their tags and are not rebuilt: 0.1.1 (`01b40cf2…`,
-container `d10f6fd4…`) at tag `v0.1.1`, 0.1.0 (`b4b49387…`, container
-`ff8cfa91…`) at tag `v0.1.0`.
+Earlier builds stay at their tags and are not rebuilt: 0.1.2 (`c23bd361…`,
+container `d8e3f3ae…`) at tag `v0.1.2`, 0.1.1 (`01b40cf2…`, container
+`d10f6fd4…`) at tag `v0.1.1`, 0.1.0 (`b4b49387…`, container `ff8cfa91…`) at
+tag `v0.1.0`.
 
 Equivalent explicit commands:
 

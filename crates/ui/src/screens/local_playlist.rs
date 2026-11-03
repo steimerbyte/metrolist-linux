@@ -4,7 +4,7 @@ use eframe::egui::{self, Ui};
 use ml_core::{QueueSource, Song};
 
 use crate::art::ArtCache;
-use crate::pure::playlist_move_target;
+use crate::pure::{playlist_move_target, playlist_songs, PlaylistOrder};
 use crate::services::Services;
 use crate::state::LocalPlaylistState;
 use crate::theme::{bold_font, regular_font, Theme, DP12, DP24, DP4, DP8, TITLE_LARGE};
@@ -13,7 +13,7 @@ use crate::widgets::{
     SongRowOptions,
 };
 
-use super::{error_block, skeleton_rows, Intent};
+use super::{artist_intent, error_block, skeleton_rows, sort_menu, Intent};
 
 pub fn show(
     ui: &mut Ui,
@@ -73,26 +73,24 @@ pub fn show(
     );
     ui.add_space(DP8);
 
+    // Display-only order: Play, Shuffle and row indices all use this copy.
+    let songs = playlist_songs(&view.songs, state.sort);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = DP8;
-        if filled_button(ui, theme, Some("play_arrow"), "Play").clicked() && !view.songs.is_empty()
-        {
-            intents.push(Intent::Play {
-                songs: view.songs.clone(),
-                index: 0,
+        if filled_button(ui, theme, Some("play_arrow"), "Play").clicked() && !songs.is_empty() {
+            intents.push(Intent::PlayAll {
+                songs: songs.clone(),
                 source: QueueSource::List,
             });
         }
-        if outlined_button(ui, theme, "Shuffle").clicked() && !view.songs.is_empty() {
+        if outlined_button(ui, theme, "Shuffle").clicked() && !songs.is_empty() {
             intents.push(Intent::PlayShuffled {
-                songs: view.songs.clone(),
+                songs: songs.clone(),
                 source: QueueSource::List,
             });
         }
-        if icon_button(ui, theme, "download", "Download all", 22.0).clicked()
-            && !view.songs.is_empty()
-        {
-            intents.push(Intent::DownloadAll(view.songs.clone()));
+        if icon_button(ui, theme, "download", "Download all", 22.0).clicked() && !songs.is_empty() {
+            intents.push(Intent::DownloadAll(songs.clone()));
         }
         if outlined_button(ui, theme, "Add current").clicked() {
             intents.push(Intent::AddCurrentToPlaylist {
@@ -170,8 +168,15 @@ pub fn show(
         return intents;
     }
 
+    sort_menu(
+        ui,
+        theme,
+        &PlaylistOrder::ALL,
+        &mut state.sort,
+        PlaylistOrder::label,
+    );
+    ui.add_space(DP4);
     section_header(ui, theme, "Tracks", width, false);
-    let songs = view.songs.clone();
     for (index, song) in songs.iter().enumerate() {
         let url = song.thumb(160);
         let texture = art.texture(ui.ctx(), services, &url);
@@ -196,6 +201,12 @@ pub fn show(
                     song: song.clone(),
                     action: response.download_action,
                 });
+            } else if response
+                .artist
+                .as_ref()
+                .is_some_and(|artist| artist.clicked())
+            {
+                intents.extend(artist_intent(song));
             } else if response.row.clicked() {
                 intents.push(Intent::Play {
                     songs: songs.clone(),
@@ -203,22 +214,26 @@ pub fn show(
                     source: QueueSource::List,
                 });
             }
-            if icon_button(ui, theme, "keyboard_arrow_up", "Move up", 18.0).clicked() {
-                if let Some(to) = playlist_move_target(index, songs.len(), -1) {
-                    intents.push(Intent::MovePlaylistSong {
-                        id: view.id.clone(),
-                        from: index,
-                        to,
-                    });
+            // Row positions only match stored indices in Default order; a sorted
+            // view hides the reorder controls instead of moving the wrong song.
+            if state.sort == PlaylistOrder::Default {
+                if icon_button(ui, theme, "keyboard_arrow_up", "Move up", 18.0).clicked() {
+                    if let Some(to) = playlist_move_target(index, songs.len(), -1) {
+                        intents.push(Intent::MovePlaylistSong {
+                            id: view.id.clone(),
+                            from: index,
+                            to,
+                        });
+                    }
                 }
-            }
-            if icon_button(ui, theme, "keyboard_arrow_down", "Move down", 18.0).clicked() {
-                if let Some(to) = playlist_move_target(index, songs.len(), 1) {
-                    intents.push(Intent::MovePlaylistSong {
-                        id: view.id.clone(),
-                        from: index,
-                        to,
-                    });
+                if icon_button(ui, theme, "keyboard_arrow_down", "Move down", 18.0).clicked() {
+                    if let Some(to) = playlist_move_target(index, songs.len(), 1) {
+                        intents.push(Intent::MovePlaylistSong {
+                            id: view.id.clone(),
+                            from: index,
+                            to,
+                        });
+                    }
                 }
             }
             if icon_button(ui, theme, "remove_circle", "Remove from playlist", 18.0).clicked() {

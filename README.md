@@ -14,13 +14,21 @@ and is **not** part of this crate graph.
 
 - **Playback** — unauthenticated stream resolution over the VISIONOS client
   (no PO token needed) with ranged transfers, mpv JSON-IPC engine, gapless
-  prefetch, shuffle/repeat/radio queue, 10-band EQ presets, speed, sleep timer,
-  output device selection, Auto/Low/High quality.
+  prefetch, shuffle/repeat/radio queue (radio button immediately right of
+  Repeat, active dot while the queue is radio), an animated progress timeline
+  with hover/drag seek preview and one seek on release, creator links in every
+  song row (first artist with a channel id) and the player byline, 10-band EQ
+  presets, speed, sleep timer, output device selection, Auto/Low/High quality.
 - **Library** — liked songs, library membership, songs/albums/artists/
-  playlists/downloads/history tabs, local playlist editing (create, rename,
-  delete, add, remove, reorder), local play history.
+  playlists/downloads/history tabs, sort chips (Recently added/Title/Artist/
+  Album/Duration) that order a display copy without rewriting the store,
+  playlist and local-playlist display order (Default/Recently added/Title/
+  Artist/Duration, also used by Play/Shuffle), Liked Songs Play All, local
+  playlist editing (create, rename, delete, add, remove, reorder), local play
+  history.
 - **Discovery** — live home feed with chips and continuations, search with
-  suggestions and filters, album, artist and online playlist pages.
+  suggestions and filters behind a centred search pill (equal gutters, 341 px
+  at 405, capped at 720 px when wide), album, artist and online playlist pages.
 - **Catalog & stats** — charts, moods/genres, new releases, podcast browsing,
   song recognition from the search app bar, and Stats/Wrapped over local
   history.
@@ -33,7 +41,8 @@ and is **not** part of this crate graph.
   implemented and tested, though the lyric view still renders provider text
   verbatim.
 - **Desktop** — MPRIS, StatusNotifierItem tray, now-playing notifications,
-  single instance with `metrolist://play?v=…` forwarding.
+  single instance with `metrolist://play?v=…` forwarding (`--smoke`/
+  `--screenshot` skip the guard so batch runs work beside the installed app).
 - **Integrations** — optional Last.fm scrobbling (session or username/password
   login, credentials in `${data_dir}/secrets.json`, mode 0600) and Discord Rich
   Presence (feature-gated, off by default). Account sign-in by importing a
@@ -42,6 +51,11 @@ and is **not** part of this crate graph.
 - **Theme** — Material 3 roles from `material-colors` (SPEC_2025/TonalSpot),
   System/Light/Dark/Pure black, seed colour presets and picker, responsive
   compact (`< 840 dp`) and expanded shells.
+- **Motion** — one Material 3 motion system (`crates/ui/src/motion.rs`, design
+  and coverage in `docs/MOTION.md`): duration/easing tokens for route, player,
+  dialog, mini player, toast, search, lyrics, skeleton and equalizer animation,
+  plus hover/press/focus state layers, a Reduce motion setting and
+  `METROLIST_REDUCE_MOTION=1`.
 
 `docs/PARITY.md` is the honest per-feature matrix (Done / Partial / Not ported /
 N/A), with the exact evidence for each row and the limits of every partial.
@@ -50,7 +64,7 @@ N/A), with the exact evidence for each row and the limits of every partial.
 
 Captured from the running app with `--screenshot` (see *CI / capture modes*)
 against demo data, signed out. Each thumbnail links to the full-resolution
-frame (1100×760, or 405×900 where noted).
+frame; dimensions are noted where a frame differs from 1100×760.
 
 | | | | |
 |---|---|---|---|
@@ -62,13 +76,28 @@ frame (1100×760, or 405×900 where noted).
 | Listen together | Integrations | Settings (audio) | Account (signed out) |
 | [<img src="docs/ui-player-vinyl-405.png" width="200" alt="Vinyl player">](docs/ui-player-vinyl-405.png) | [<img src="docs/ui-sidebar-settings-405.png" width="200" alt="Settings in the navigation">](docs/ui-sidebar-settings-405.png) | | |
 | Vinyl player (405×900) | Settings via nav (405×900) | | |
+| [<img src="docs/ui-library-sort-menu-405.png" width="200" alt="Library sort menu">](docs/ui-library-sort-menu-405.png) | [<img src="docs/ui-creator-hover-405.png" width="200" alt="Artist link">](docs/ui-creator-hover-405.png) | [<img src="docs/ui-player-progress-1100.png" width="200" alt="Player progress">](docs/ui-player-progress-1100.png) | [<img src="docs/ui-player-progress-hover-405.png" width="200" alt="Seek preview">](docs/ui-player-progress-hover-405.png) |
+| Sort menu (405×900) | Artist link (405×900) | Player progress (1100×900) | Seek preview (405×900) |
+| [<img src="docs/ui-search-pill-405.png" width="200" alt="Search pill at 405">](docs/ui-search-pill-405.png) | [<img src="docs/ui-search-pill-1100.png" width="200" alt="Search pill at 1100">](docs/ui-search-pill-1100.png) | [<img src="docs/ui-motion-player-1100.png" width="200" alt="Motion in the player">](docs/ui-motion-player-1100.png) | [<img src="docs/ui-motion-queue-1100.png" width="200" alt="Motion in the queue">](docs/ui-motion-queue-1100.png) |
+| Search pill (405×900) | Search pill (1100×760) | Motion: player (1100×760) | Motion: queue (1100×760) |
+| [<img src="docs/icon-preview.png" width="200" alt="Desktop icon preview">](docs/icon-preview.png) | [<img src="docs/ui-player-progress-405.png" width="200" alt="Player progress">](docs/ui-player-progress-405.png) | | |
+| Desktop icon preview | Player progress (405×900) | | |
+
+### Desktop icon
+
+The icon master is
+[`assets/icons/metrolist-desktop.svg`](assets/icons/metrolist-desktop.svg)
+(1024×1024 viewBox) with RGBA PNGs at 16, 32, 48, 64, 128, 256, 512 and
+1024 px in the same directory; `packaging/check-icon.sh` validates the SVG and
+every size. Preview sheet: [`docs/icon-preview.png`](docs/icon-preview.png).
+The `.desktop` entry keeps `Icon=metrolist-desktop`.
 
 ## Status
 
 | Layer | State |
 |---|---|
 | `ml-core` | Models, queue state machine, settings, events, utilities + tests |
-| `ml-ui` | M3 theme, custom widgets, responsive shell, live Home/Search/Album/Artist/Playlist/Library/Settings/player/queue/lyrics screens plus catalog (charts, moods, new releases, podcasts), stats/Wrapped, recognition, Listen Together and integrations |
+| `ml-ui` | M3 theme + motion system, custom widgets, responsive shell, live Home/Search/Album/Artist/Playlist/Library/Settings/player/queue/lyrics screens plus catalog (charts, moods, new releases, podcasts), stats/Wrapped, recognition, Listen Together and integrations |
 | `ml-innertube` | Live unauthenticated WEB_REMIX browse/search/album/artist/playlist/`next` client; VISIONOS player/stream path needs no PO token. Read-only browser-cookie session discovery exists; OAuth/WebView login and the PO-token (BotGuard) route are not implemented. |
 | `ml-lyrics` | LRCLIB + KuGou wired; LyricsPlus/BetterLyrics/Paxsenix/Zemer refuse with typed errors; LRC/TTML parsing; Macedonian Cyrillic romanisation (other Cyrillic languages return `MlError::Unimplemented`), Japanese/Korean/Chinese/Hindi romanisation implemented |
 | `ml-store` | SQLite schema v1 forward migrations, typed CRUD for library/likes/history/playlists/queue/settings |
@@ -84,28 +113,63 @@ interfaces and per-workstream ownership.
 
 ## AppImage
 
-`dist/Metrolist-Desktop-0.1.2-x86_64.AppImage` — 120,723,960 bytes (115.1 MiB),
-AppImage type 2 (runtime commit `fedfad5`), built in `rust:1.99.1-bookworm`
-from the frozen tree in `docs/SOURCE-FREEZE.sha256` (246 files, self-sha256
-`084d9393…`). Published as
-[v0.1.2](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.2).
+`dist/Metrolist-Desktop-0.1.3-x86_64.AppImage` — 121,031,160 bytes (115.4 MiB),
+AppImage type 2 (runtime commit `fedfad5`), built 2026-11-03 in
+`rust:1.99.1-bookworm` from the frozen tree in `docs/SOURCE-FREEZE.sha256`
+(247 files, self-sha256 `87f5b3a7…`). Published as
+[v0.1.3](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.3).
 
 ```text
-sha256  c23bd3618f37aa874babb32f68ff30340c81d54ad8ea6a3f58e673c64b270d46
+sha256  19307f8a6a8bf7e4359ced4bb0076871dee0419da16900d47f7fe2b690c91894
 ```
 
 ```sh
 cd dist && sha256sum -c SHA256SUMS
-# Metrolist-Desktop-0.1.2-x86_64.AppImage: OK
+# Metrolist-Desktop-0.1.3-x86_64.AppImage: OK
 ```
 
 ```sh
 chmod +x dist/Metrolist-Desktop-*-x86_64.AppImage
 ./dist/Metrolist-Desktop-*-x86_64.AppImage
 # or install it for the desktop (the layout used for release verification):
-mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.2-x86_64.AppImage \
+mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.3-x86_64.AppImage \
   ~/AppImages/metrolist_desktop.appimage && chmod 755 ~/AppImages/metrolist_desktop.appimage
 ```
+
+### What changed in 0.1.3
+
+- **Library sort** — a compact sort chip on songs, albums, artists and
+  playlists (Recently added, Title, Artist, Album, Duration); playlists and
+  local playlists add Default (stored order) and feed the sorted copy to Play
+  and Shuffle. Display-only: the stored order is never mutated, ties keep the
+  store order, rows without a timestamp/artist/album/duration sort last, and
+  the reorder controls are hidden while a sort is active.
+- **Creator links** — the first artist with a channel id in every song row and
+  the player byline opens the artist page; a row without one keeps its play
+  action and plain text.
+- **Player radio** — a radio button immediately right of Repeat starts the
+  existing `next` radio queue, with an active dot while the queue source is
+  radio.
+- **Progress timeline** — frame-rate-independent smoothing, a hover/drag time
+  bubble, a buffering pulse and exactly one seek on release.
+- **Liked Songs Play All** — the header action plays the current snapshot
+  immediately (mini player included) through a new `Intent::PlayAll`, so a
+  one-song liked list is never turned into radio; tapping a row in that list
+  still starts radio, as before.
+- **Search pill** — centred with equal gutters at 405 and 1100 (rendered boxes
+  341 px and 720 px), instead of following the search body width.
+- **Motion** — `crates/ui/src/motion.rs` adds one Material 3 token/easing set
+  used by the route, player, dialog, mini player, toast, search, lyrics,
+  skeleton and equalizer animations and by hover/press/focus states; Reduce
+  motion is a Settings toggle and `METROLIST_REDUCE_MOTION=1`. Idle-repaint
+  tests keep finished animations from requesting frames. Design, coverage and
+  the evaluated-but-rejected `egui_animate` 0.6 / `blinc_animation` 0.5.1 are
+  documented in `docs/MOTION.md`.
+- **Desktop icon** — new SVG master and 16–1024 px PNGs, validated by
+  `packaging/check-icon.sh`; the `.desktop` `Icon=metrolist-desktop` name is
+  unchanged.
+- **Batch modes** — `--smoke` and `--screenshot` skip the single-instance
+  guard, so they run beside the installed app instead of being forwarded.
 
 ### What changed in 0.1.2
 
@@ -158,19 +222,20 @@ dependency details are in `docs/BUILD.md` and `packaging/README.md`.
 
 | Check | Result |
 |---|---|
-| `cargo test --workspace --no-fail-fast` | **715 passed, 0 failed, 31 ignored** |
-| Verus proofs (`proofs/run-gates.sh`) | **12 proof sets, 289 functions verified, 0 errors** (frozen `bfbfbd84…`, gate `19c01a9b…`) |
-| Independent proof review | **ACCEPT** of the full gate — 12/12 pairs, 289 functions, token-lexer `spec_guard` (`proofs/REVIEW.md`) |
-| `cargo fmt`/`check`/`clippy`/`build --release` | pass; re-run for 0.1.2 |
+| `cargo test --workspace --no-fail-fast --locked` | **744 passed, 0 failed, 31 ignored** |
+| Verus proofs (`proofs/run-gates.sh`) | **12 proof sets, 296 functions verified, 0 errors** (frozen `17e030a7…`, gate `09f035e7…`); gate exit 0, `check-drift.sh` 21/21 |
+| Independent proof review | **ACCEPT** of the full gate — 12/12 pairs, 296 functions, token-lexer `spec_guard` (`proofs/REVIEW.md`) |
+| UI audit (`docs/UI-AUDIT-0.1.3.md`) | **PASS** — no blocker or should-fix left; nits only (16 px icon, sort-menu elevation, 900 px player composition, capture-state placeholders, narrow-row queue title edge) |
+| `cargo fmt`/`check`/`clippy`/`build` | pass — `fmt --all -- --check`, `check --workspace --all-targets --locked`, clippy exit 0 with 16 warnings (all `ml-ui`), `build -p ml-ui --bin metrolist --locked` |
 | `./proofs/check-drift.sh` | no source drift (21 declared sources match) |
-| `metrolist --smoke 120` | `SMOKE_OK frames=120 backend=Vulkan` |
-| AppImage smoke (`--smoke 120`) | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` in a clean environment on Wayland and via `--appimage-extract-and-run`; screenshot at 405×900 |
+| `metrolist --smoke 120` | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` |
+| AppImage smoke (`--smoke 120`) | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` in two clean isolated runs, exit 0 both times, 0 `ERROR` lines, no `home_sections` variance, no attributable leftover mpv/metrolist/AppRun processes or sockets — real runtime, `METROLIST_TEST_MUTE=1`, `--appimage-extract-and-run` |
 | Account login (live) | masked account signed in, `session-cookies.txt` mode `0600` with 27 cookies; library sync 14 playlists / 24 songs / 1 album / 25 artists |
 | Audio mute fix | seeded WirePlumber stream mute cleared by the engine (v0.1.0 control stayed muted); explicit user "test mute" still mutes |
 | Player / Settings | rotating vinyl screenshot (`docs/ui-player-vinyl-405.png`); Settings reachable from sidebar and compact bottom nav (`docs/ui-sidebar-settings-405.png`) |
 | Shutdown / leak checks | 0 mpv processes, 0 engine sockets and 0 instance socket after smoke and SIGTERM; SIGKILL leaves 0 children and the next launch sweeps stale sockets |
-| Installed copy (`~/AppImages/metrolist_desktop.appimage`, 755) | same size and sha256; clean-env smoke, 0 leaks |
-| `sha256sum -c dist/SHA256SUMS` | `Metrolist-Desktop-0.1.2-x86_64.AppImage: OK` |
+| Installed copy (`~/AppImages/metrolist_desktop.appimage`, 755) | same 121,031,160 bytes and sha256; `metrolist_desktop.sha256` updated; two clean installed `--appimage-extract-and-run --smoke 120` runs (fresh isolated `XDG_*`, real runtime, `METROLIST_TEST_MUTE=1`) printed the exact `SMOKE_OK` line, both exit 0, 0 attributable leftovers; the pre-existing 0.1.2 instance was untouched |
+| `sha256sum -c dist/SHA256SUMS` (from `dist/`) | `Metrolist-Desktop-0.1.3-x86_64.AppImage: OK` |
 
 The 31 ignored tests are the live ones that need mpv, D-Bus/tray/notification
 services, the single-instance socket, the network or a real account cookie file.
@@ -214,11 +279,16 @@ matter for a release are:
 - **Downloads** have no byte-level resume (an interrupted transfer restarts at
   byte 0) and offline cover art falls back to the scheme placeholder on a cold
   start.
+- **Library sort** is display-only: the chips order a copy for rendering and
+  for Play/Shuffle, the stored order is never rewritten, and the reorder
+  controls are hidden while a sort is active. **Local library search** still
+  has no UI box; the store query (songs/albums/artists/playlists in one page)
+  is implemented and tested.
 - Not ported: backup/import/export, updater/changelog, hide-explicit /
   hide-video-song filters, dynamic desktop accent colour, Automix, lyrics
   cache wiring, Android Auto/widgets/Cast/alarms (MPRIS + tray replace them).
-- Partial by design: EQ surface, loudness (manual gain only), library
-  sort/search, podcast subscriptions, generic YouTube browse.
+- Partial by design: EQ surface, loudness (manual gain only), podcast
+  subscriptions, generic YouTube browse.
 
 ## Toolchain
 
@@ -262,6 +332,11 @@ cargo run -p ml-ui --bin metrolist -- --screenshot docs/ui-wide.png 1100 760
 # Deterministic demo state for a screen
 cargo run -p ml-ui --bin metrolist -- --screenshot docs/ui-player.png \
     405 900 --demo player
+
+# Hover/click evidence: pointer is injected through eframe raw input (screenshot
+# mode only, dev aid); syntax: --pointer X Y [--click]
+cargo run -p ml-ui --bin metrolist -- --screenshot docs/ui-sort-open.png \
+    405 900 --demo library --pointer 100 419 --click
 ```
 
 `--demo` accepts `player|queue|lyrics|library|settings|history|liked|downloads`.

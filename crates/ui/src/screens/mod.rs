@@ -23,18 +23,24 @@ pub mod settings;
 pub mod stats;
 pub mod together;
 
-use eframe::egui::{self, Align, Layout, Ui, Vec2};
+use eframe::egui::{self, Align, Align2, Layout, Pos2, Sense, Ui, Vec2};
 use ml_core::{QueueSource, Song, YtItem};
 
 use crate::art::ArtCache;
+use crate::motion;
 use crate::pure::DownloadClick;
 use crate::routes::Route;
 use crate::services::Services;
-use crate::state::{item_route, item_song, item_subtitle, item_thumb, section_songs};
-use crate::theme::{regular_font, Theme, DP16, DP4, DP8, GRID_GAP, TOUCH};
+use crate::state::{
+    item_route, item_song, item_subtitle, item_thumb, section_songs, song_artist_id,
+};
+use crate::theme::{
+    medium_font, regular_font, Theme, DP16, DP32, DP4, DP8, GRID_GAP, LABEL_LARGE, SHAPE_SMALL,
+    TOUCH,
+};
 use crate::widgets::{
-    album_card, empty_state, filled_button, outlined_button, shimmer, shimmer_row, song_row,
-    SongRowOptions,
+    album_card, empty_state, filled_button, outlined_button, paint_icon, shimmer, shimmer_row,
+    song_row, text_width, SongRowOptions,
 };
 
 /// A UI intent that needs the app shell (services, navigation, playback).
@@ -43,6 +49,13 @@ pub enum Intent {
     Play {
         songs: Vec<Song>,
         index: usize,
+        source: QueueSource,
+    },
+    /// An explicit "Play all" from a list header. Always starts the list at its
+    /// first track; unlike [`Intent::Play`] it never turns a one-song list into
+    /// a radio queue.
+    PlayAll {
+        songs: Vec<Song>,
         source: QueueSource,
     },
     /// Play a catalog selection without starting a radio queue.
@@ -115,6 +128,70 @@ pub enum Intent {
     AdjustLyricsOffset(i64),
     ResetLyricsOffset,
     TranslateLyrics,
+}
+
+/// Open the first artist with an id from a song row, if there is one.
+pub fn artist_intent(song: &Song) -> Option<Intent> {
+    song_artist_id(song).map(|id| Intent::Open(Route::Artist { id }))
+}
+
+/// Compact display-sort menu: one chip with the current order, a popup of
+/// options. Writes back a fallback when the choice is not offered on this tab.
+pub fn sort_menu<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    theme: &Theme,
+    options: &[T],
+    selected: &mut T,
+    label: impl Fn(T) -> &'static str,
+) {
+    let Some(first) = options.first().copied() else {
+        return;
+    };
+    if !options.contains(selected) {
+        *selected = first;
+    }
+    let text = format!("Sort: {}", label(*selected));
+    let font = medium_font(LABEL_LARGE);
+    let text_width = text_width(ui.painter(), &text, font.clone());
+    let width = (text_width + 16.0 + 32.0).min(ui.available_width());
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, DP32), Sense::click());
+    let fill = motion::state_layer(ui, theme.scheme.surface_container_high, &response);
+    ui.painter().rect_filled(rect, SHAPE_SMALL, fill);
+    ui.painter().text(
+        Pos2::new(rect.left() + 12.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        &text,
+        font,
+        theme.scheme.on_surface,
+    );
+    paint_icon(
+        ui.painter(),
+        Pos2::new(rect.right() - 14.0, rect.center().y),
+        "keyboard_arrow_down",
+        18.0,
+        theme.scheme.on_surface_variant,
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::Role::ComboBox,
+            true,
+            format!("Sort by {}", label(*selected)),
+        )
+    });
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    egui::Popup::menu(&response)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+        .show(|ui| {
+            ui.set_min_width(width.max(160.0));
+            for &option in options {
+                let current = *selected == option;
+                if ui.selectable_label(current, label(option)).clicked() && !current {
+                    *selected = option;
+                }
+            }
+        });
 }
 
 /// Center a text/form column inside the available width, up to `max_width`.
@@ -265,6 +342,12 @@ pub fn section_block(
                                     .is_some_and(|radio| radio.clicked())
                                 {
                                     intents.push(Intent::StartRadio(song.clone()));
+                                } else if response
+                                    .artist
+                                    .as_ref()
+                                    .is_some_and(|artist| artist.clicked())
+                                {
+                                    intents.extend(artist_intent(song));
                                 } else if response.row.clicked() {
                                     intents.push(Intent::Play {
                                         songs: songs.clone(),
@@ -380,6 +463,12 @@ pub fn mixed_items(
                 });
             } else if response.radio.as_ref().is_some_and(|radio| radio.clicked()) {
                 intents.push(Intent::StartRadio(song.clone()));
+            } else if response
+                .artist
+                .as_ref()
+                .is_some_and(|artist| artist.clicked())
+            {
+                intents.extend(artist_intent(&song));
             } else if response.row.clicked() {
                 let index = songs
                     .iter()
@@ -473,6 +562,12 @@ pub fn song_list(
             });
         } else if response.radio.as_ref().is_some_and(|radio| radio.clicked()) {
             intents.push(Intent::StartRadio(song.clone()));
+        } else if response
+            .artist
+            .as_ref()
+            .is_some_and(|artist| artist.clicked())
+        {
+            intents.extend(artist_intent(song));
         } else if response.row.clicked() {
             intents.push(Intent::Play {
                 songs: songs.to_vec(),

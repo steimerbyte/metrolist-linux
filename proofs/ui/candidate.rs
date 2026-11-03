@@ -1466,4 +1466,136 @@ pub fn cookie_import_format(text: &Vec<u8>) -> (r: CookieImportFormat)
     CookieImportFormat::Unknown
 }
 
+// ===== play_starts_radio (v0.1.3 UI tranche) =====
+//
+// `ml_core::QueueSource` with its full six-variant shape (the `radio` pair only
+// needs two): the predicate compares against `List`. `App::play_intent` routes
+// a row tap through this predicate and an explicit "Play all" around it.
+
+#[derive(PartialEq, Eq)]
+pub enum QueueSource {
+    List,
+    Album,
+    Playlist,
+    Radio,
+    Artist,
+    Local,
+}
+
+/// `!play_all && song_count == 1 && source == List`, exactly the source body.
+pub open spec fn play_starts_radio_spec(
+    song_count: usize,
+    source: QueueSource,
+    play_all: bool,
+) -> bool {
+    !play_all && song_count == 1 && source == QueueSource::List
+}
+
+pub fn play_starts_radio(song_count: usize, source: QueueSource, play_all: bool) -> (r: bool)
+    ensures
+        r == play_starts_radio_spec(song_count, source, play_all),
+        r ==> song_count == 1,
+        r ==> source == QueueSource::List,
+        play_all ==> !r,
+        song_count == 0 ==> !r,
+{
+    // The source compares `source == QueueSource::List`; the derived `PartialEq`
+    // is opaque to Verus, so the fieldless enum is tested by variant here.
+    !play_all && song_count == 1 && match source {
+        QueueSource::List => true,
+        _ => false,
+    }
+}
+
+// ===== PlaylistOrder::sort_mode (v0.1.3 UI tranche) =====
+//
+// The two display enums, reduced to their variants. Labels are `&'static str`
+// and stay CANDIDATE (see SOURCE.md); the sorters themselves are Vec/String and
+// out of subset.
+
+pub enum SortMode {
+    RecentlyAdded,
+    Title,
+    Artist,
+    Album,
+    Duration,
+}
+
+pub enum PlaylistOrder {
+    Default,
+    RecentlyAdded,
+    Title,
+    Artist,
+    Duration,
+}
+
+pub open spec fn sort_mode_spec(order: PlaylistOrder) -> Option<SortMode> {
+    match order {
+        PlaylistOrder::Default => None,
+        PlaylistOrder::RecentlyAdded => Some(SortMode::RecentlyAdded),
+        PlaylistOrder::Title => Some(SortMode::Title),
+        PlaylistOrder::Artist => Some(SortMode::Artist),
+        PlaylistOrder::Duration => Some(SortMode::Duration),
+    }
+}
+
+pub open spec fn sort_mode_is_none(order: PlaylistOrder) -> bool {
+    match sort_mode_spec(order) {
+        None => true,
+        Some(_) => false,
+    }
+}
+
+impl PlaylistOrder {
+    fn sort_mode(self) -> (r: Option<SortMode>)
+        ensures
+            r == sort_mode_spec(self),
+    {
+        match self {
+            PlaylistOrder::Default => None,
+            PlaylistOrder::RecentlyAdded => Some(SortMode::RecentlyAdded),
+            PlaylistOrder::Title => Some(SortMode::Title),
+            PlaylistOrder::Artist => Some(SortMode::Artist),
+            PlaylistOrder::Duration => Some(SortMode::Duration),
+        }
+    }
+}
+
+pub proof fn lemma_play_all_is_never_radio(song_count: usize, source: QueueSource)
+    ensures
+        !play_starts_radio_spec(song_count, source, true),
+{
+}
+
+pub proof fn lemma_radio_needs_exactly_one(
+    song_count: usize,
+    source: QueueSource,
+    play_all: bool,
+)
+    ensures
+        play_starts_radio_spec(song_count, source, play_all) ==> song_count == 1,
+        song_count == 0 ==> !play_starts_radio_spec(song_count, source, play_all),
+{
+}
+
+pub proof fn lemma_radio_needs_list(song_count: usize, source: QueueSource, play_all: bool)
+    ensures
+        play_starts_radio_spec(song_count, source, play_all) ==> source == QueueSource::List,
+{
+}
+
+/// `Default` is the only order that keeps the stored order.
+pub proof fn lemma_default_only_none(order: PlaylistOrder)
+    ensures
+        sort_mode_is_none(order) == (order == PlaylistOrder::Default),
+{
+}
+
+/// A playlist page never selects the album sort.
+pub proof fn lemma_album_unreachable(order: PlaylistOrder)
+    ensures
+        sort_mode_spec(order) != Some(SortMode::Album),
+{
+}
+
 } // verus!

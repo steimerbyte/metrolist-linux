@@ -30,6 +30,8 @@ pub struct Theme {
     pub scheme: ColorScheme,
     pub dark: bool,
     pub pure_black: bool,
+    /// Collapse every animation to an instant state change.
+    pub reduce_motion: bool,
 }
 
 impl Theme {
@@ -47,6 +49,7 @@ impl Theme {
             scheme,
             dark,
             pure_black,
+            reduce_motion: settings.reduce_motion,
         }
     }
 
@@ -73,6 +76,12 @@ impl Theme {
         style.spacing.interact_size = Vec2::splat(TOUCH);
         style.spacing.menu_margin = Margin::same(DP8 as i8);
         style.spacing.indent = DP20;
+        style.animation_time = crate::motion::HOVER;
+        style.scroll_animation = if self.reduce_motion {
+            egui::style::ScrollAnimation::none()
+        } else {
+            egui::style::ScrollAnimation::default()
+        };
         style.text_styles.clear();
         style.text_styles.extend([
             (TextStyle::Heading, FontId::new(TITLE_LARGE, fonts::bold())),
@@ -107,6 +116,7 @@ impl Theme {
             ThemePreference::Light
         };
         ctx.set_theme(preference);
+        crate::motion::set_reduced(ctx, self.reduce_motion);
         // Apply to both theme slots: eframe may flip the preference if the
         // desktop portal changes while the app runs.
         ctx.set_style_of(egui::Theme::Dark, style.clone());
@@ -150,16 +160,5 @@ impl Theme {
         visuals.widgets.open.fg_stroke = Stroke::new(1.0, s.on_surface);
         visuals.widgets.open.bg_stroke = Stroke::new(1.0, s.outline);
         visuals
-    }
-}
-
-/// State-layer overlay helper used by custom widgets.
-pub fn state_layer(base: Color32, hovered: bool, pressed: bool) -> Color32 {
-    if pressed {
-        base.lerp_to_gamma(Color32::WHITE, 0.12)
-    } else if hovered {
-        base.lerp_to_gamma(Color32::WHITE, 0.08)
-    } else {
-        base
     }
 }

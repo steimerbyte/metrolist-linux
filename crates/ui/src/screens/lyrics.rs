@@ -3,6 +3,7 @@
 use eframe::egui::{self, Ui};
 use ml_core::{LyricsDocument, LyricsLine, Song};
 
+use crate::motion;
 use crate::pure::lyrics_offset_label;
 use crate::state::Load;
 use crate::theme::{medium_font, regular_font, Theme, DP12, DP4, DP8};
@@ -116,25 +117,39 @@ pub fn show(
             .id_salt("lyrics_scroll")
             .auto_shrink([false, true])
             .show(ui, |ui| {
+                let active_now = active.map(|index| index as i32).unwrap_or(-1);
+                let previous_active = ui.data_mut(|data| {
+                    let slot =
+                        data.get_temp_mut_or::<i32>(egui::Id::unique("lyrics_last_active"), -1);
+                    let previous = *slot;
+                    *slot = active_now;
+                    previous
+                });
                 for (index, line) in document.lines.iter().enumerate() {
                     let is_active = active == Some(index);
+                    let active_t = motion::t(
+                        ui,
+                        ui.scope_id().with(("lyric_line", index)),
+                        is_active,
+                        motion::ENTER,
+                    );
+                    // Text colour and weight swap at the midpoint: animating
+                    // them would re-lay out a galley every frame.
+                    let strong = active_t >= 0.5;
                     let color = if line.background {
-                        if is_active {
+                        if strong {
                             theme.scheme.secondary
                         } else {
                             theme.scheme.outline
                         }
-                    } else if is_active {
+                    } else if strong {
                         theme.scheme.primary
                     } else {
                         theme.scheme.on_surface
                     };
-                    let fill = if is_active {
-                        theme.scheme.surface_container_high
-                    } else {
-                        egui::Color32::TRANSPARENT
-                    };
-                    egui::Frame::new()
+                    let fill = egui::Color32::TRANSPARENT
+                        .lerp_to_gamma(theme.scheme.surface_container_high, active_t);
+                    let response = egui::Frame::new()
                         .fill(fill)
                         .corner_radius(8)
                         .inner_margin(egui::Margin::symmetric(DP8 as i8, DP4 as i8))
@@ -143,7 +158,7 @@ pub fn show(
                             let mut text = egui::RichText::new(&line.text)
                                 .font(regular_font(15.0))
                                 .color(color);
-                            if is_active {
+                            if strong {
                                 text = text.strong();
                             }
                             ui.add(egui::Label::new(text).wrap());
@@ -164,7 +179,11 @@ pub fn show(
                                     );
                                 }
                             }
-                        });
+                        })
+                        .response;
+                    if is_active && previous_active != active_now {
+                        ui.scroll_to_rect(response.rect, Some(egui::Align::Center));
+                    }
                     ui.add_space(DP8);
                 }
             });

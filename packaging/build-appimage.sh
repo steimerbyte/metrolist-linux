@@ -88,15 +88,13 @@ done
 rm -rf "$APPDIR"
 install -d "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" \
     "$APPDIR/usr/share/metrolist" "$APPDIR/usr/share/licenses/metrolist-desktop" \
-    "$APPDIR/usr/lib/metrolist/mpv" \
-    "$APPDIR/usr/share/icons/hicolor/128x128/apps" \
-    "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
-    "$APPDIR/usr/share/icons/hicolor/512x512/apps"
+    "$APPDIR/usr/lib/metrolist/mpv"
 install -m 0755 "$BIN" "$APPDIR/usr/bin/metrolist"
 install -m 0755 "$source_dir/AppRun" "$APPDIR/AppRun"
 install -m 0644 "$source_dir/Metrolist-Desktop.desktop" \
     "$APPDIR/usr/share/applications/Metrolist-Desktop.desktop"
-for size in 128 256 512; do
+for size in 16 32 48 64 128 256 512 1024; do
+    install -d "$APPDIR/usr/share/icons/hicolor/${size}x${size}/apps"
     install -m 0644 "$ROOT/assets/icons/metrolist-desktop-$size.png" \
         "$APPDIR/usr/share/icons/hicolor/${size}x${size}/apps/metrolist-desktop.png"
 done

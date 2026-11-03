@@ -67,36 +67,62 @@ impl Toasts {
         if self.items.is_empty() {
             return;
         }
+        // Derived from the existing timer, so entering/exiting needs no state:
+        // fade in over the first `SELECT`, out over the last `EXIT` seconds.
+        let fade_in =
+            |toast: &Toast| ((2.8 - toast.remaining) / crate::motion::SELECT).clamp(0.0, 1.0);
+        let fade_out = |toast: &Toast| (toast.remaining / crate::motion::EXIT).clamp(0.0, 1.0);
+        let entering = self
+            .items
+            .iter()
+            .map(|toast| 1.0 - fade_in(toast))
+            .fold(0.0_f32, f32::max);
+        let animating = self
+            .items
+            .iter()
+            .any(|toast| fade_in(toast) < 1.0 || fade_out(toast) < 1.0);
         egui::Area::new(Id::unique("metrolist_toasts"))
-            .anchor(Align2::CENTER_BOTTOM, Vec2::new(0.0, -TOAST_INSET))
+            .anchor(
+                Align2::CENTER_BOTTOM,
+                Vec2::new(0.0, -TOAST_INSET + crate::motion::TOAST_RISE * entering),
+            )
             .order(Order::Foreground)
             .interactable(false)
             .show(ctx, |ui| {
                 ui.set_max_width(360.0);
                 for toast in &self.items {
-                    egui::Frame::new()
-                        .fill(app_theme.scheme.inverse_surface)
-                        .corner_radius(8)
-                        .inner_margin(egui::Margin::symmetric(DP16 as i8, DP12 as i8))
-                        .show(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(&toast.text)
-                                    .font(medium_font(BODY_MEDIUM))
-                                    .color(app_theme.scheme.inverse_on_surface),
-                            );
-                        });
+                    ui.scope(|ui| {
+                        ui.set_opacity(fade_in(toast).min(fade_out(toast)));
+                        egui::Frame::new()
+                            .fill(app_theme.scheme.inverse_surface)
+                            .corner_radius(8)
+                            .inner_margin(egui::Margin::symmetric(DP16 as i8, DP12 as i8))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(&toast.text)
+                                        .font(medium_font(BODY_MEDIUM))
+                                        .color(app_theme.scheme.inverse_on_surface),
+                                );
+                            });
+                    });
                     ui.add_space(DP4);
                 }
             });
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        if animating {
+            ctx.request_repaint();
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
     }
 }
 
-/// Centered M3 modal shell with a dim backdrop.
+/// Centered M3 modal shell with a dim backdrop. `progress` is 0 on the opening
+/// frame and 1 once settled; closing is instant (the caller stops drawing).
 pub fn modal<R>(
     ctx: &egui::Context,
     app_theme: &Theme,
     id_salt: impl Hash + std::fmt::Debug,
+    progress: f32,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> egui::ModalResponse<R> {
     let frame = egui::Frame::new()
@@ -104,22 +130,36 @@ pub fn modal<R>(
         .corner_radius(SHAPE_EXTRA_LARGE)
         .inner_margin(egui::Margin::same(DP20 as i8))
         .stroke(Stroke::new(1.0, app_theme.scheme.outline_variant));
-    egui::Modal::new(Id::unique(id_salt))
-        .backdrop_color(Color32::from_black_alpha(180))
+    let id = Id::unique(id_salt);
+    let rise = crate::motion::MODAL_RISE * (1.0 - progress);
+    egui::Modal::new(id)
+        .backdrop_color(Color32::from_black_alpha((180.0 * progress) as u8))
         .frame(frame)
-        .show(ctx, add_contents)
+        .area(egui::Modal::default_area(id).anchor(Align2::CENTER_CENTER, Vec2::new(0.0, rise)))
+        .show(ctx, |ui| {
+            ui.set_opacity(progress);
+            add_contents(ui)
+        })
 }
 
 /// Animated loading block.
 pub fn shimmer(ui: &mut Ui, app_theme: &Theme, size: Vec2, radius: u8) {
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let fade = crate::motion::appear(ui.ctx(), Id::unique("shimmer_fade"), crate::motion::SELECT);
+    let mut painter = ui.painter().clone();
+    painter.set_opacity(fade);
+    if crate::motion::reduced(ui.ctx()) {
+        painter.rect_filled(rect, radius, app_theme.scheme.surface_container);
+        return;
+    }
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(33));
     let time = ui.input(|i| i.time) as f32;
     let pulse = 0.5 + 0.5 * (time * 1.6).sin();
     let fill = app_theme
         .scheme
         .surface_container
         .lerp_to_gamma(app_theme.scheme.surface_container_high, pulse * 0.7);
-    let painter = ui.painter();
     painter.rect_filled(rect, radius, fill);
     let band_x = rect.left() - 30.0 + (rect.width() + 60.0) * ((time * 0.55) % 1.0);
     let band = Rect::from_min_size(
@@ -134,16 +174,39 @@ pub fn shimmer(ui: &mut Ui, app_theme: &Theme, size: Vec2, radius: u8) {
 /// Placeholder row used while a shelf loads (art + two text bars).
 pub fn shimmer_row(ui: &mut Ui, app_theme: &Theme, width: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 64.0), Sense::hover());
+    let fade = crate::motion::appear(
+        ui.ctx(),
+        Id::unique("shimmer_row_fade"),
+        crate::motion::SELECT,
+    );
+    let mut painter = ui.painter().clone();
+    painter.set_opacity(fade);
+    let time = ui.input(|i| i.time) as f32;
+    let quiet = crate::motion::reduced(ui.ctx());
+    let pulse = if quiet {
+        0.5
+    } else {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(33));
+        0.5 + 0.5 * (time * 1.6).sin()
+    };
+    let high = app_theme
+        .scheme
+        .surface_container
+        .lerp_to_gamma(app_theme.scheme.surface_container_high, pulse * 0.7);
+    let low = app_theme
+        .scheme
+        .surface_container
+        .lerp_to_gamma(app_theme.scheme.surface_container_high, pulse * 0.4);
     let art = Rect::from_min_size(rect.left_top() + Vec2::new(0.0, DP4), Vec2::splat(56.0));
-    let painter = ui.painter();
-    painter.rect_filled(art, 4, app_theme.scheme.surface_container_high);
+    painter.rect_filled(art, 4, high);
     painter.rect_filled(
         Rect::from_min_size(
             Pos2::new(art.right() + DP12, art.top() + DP8),
             Vec2::new((width * 0.45).clamp(40.0, 220.0), 12.0),
         ),
         4,
-        app_theme.scheme.surface_container_high,
+        high,
     );
     painter.rect_filled(
         Rect::from_min_size(
@@ -151,7 +214,7 @@ pub fn shimmer_row(ui: &mut Ui, app_theme: &Theme, width: f32) {
             Vec2::new((width * 0.3).clamp(30.0, 160.0), 10.0),
         ),
         4,
-        app_theme.scheme.surface_container,
+        low,
     );
 }
 

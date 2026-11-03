@@ -4,19 +4,23 @@ use eframe::egui::{self, Ui, Vec2};
 use ml_core::{QueueSource, Song};
 
 use crate::art::ArtCache;
+use crate::motion;
+use crate::pure::{sort_albums, sort_artists, sort_playlists, sort_songs, SortMode};
 use crate::routes::Route;
 use crate::services::Services;
 use crate::state::{DownloadsState, LibTab, LibraryState};
 use crate::theme::{
-    bold_font, medium_font, regular_font, state_layer, Theme, DP12, DP16, DP24, DP4, DP48, DP8,
-    GRID_GAP,
+    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP48, DP8, GRID_GAP,
 };
 use crate::widgets::{
     album_card, chip, empty_state, filled_button, icon_button, paint_icon, section_header,
     song_row, SongRowOptions,
 };
 
-use super::{downloads, error_block, history, skeleton_cards, skeleton_rows, Intent};
+use super::{
+    artist_intent, downloads, error_block, history, skeleton_cards, skeleton_rows, sort_menu,
+    Intent,
+};
 
 pub fn show(
     ui: &mut Ui,
@@ -102,7 +106,8 @@ pub fn show(
                     "Use the library button in the player to keep a track here.",
                 );
             } else {
-                section_header(
+                let songs = sort_songs(&data.songs, state.sort);
+                if let Some(play_all) = section_header(
                     ui,
                     theme,
                     &format!(
@@ -116,8 +121,15 @@ pub fn show(
                     ),
                     width,
                     true,
-                );
-                let songs = data.songs.clone();
+                ) {
+                    if play_all.clicked() {
+                        intents.push(Intent::PlayAll {
+                            songs: songs.clone(),
+                            source: QueueSource::List,
+                        });
+                    }
+                }
+                sort_menu(ui, theme, &SortMode::ALL, &mut state.sort, SortMode::label);
                 intents.extend(library_song_rows(
                     ui,
                     theme,
@@ -141,12 +153,14 @@ pub fn show(
                 );
             } else {
                 section_header(ui, theme, "Albums", width, false);
+                sort_menu(ui, theme, &ALBUM_SORTS, &mut state.sort, SortMode::label);
+                let albums = sort_albums(&data.albums, state.sort);
                 intents.extend(album_cards(
                     ui,
                     theme,
                     services,
                     art,
-                    data.albums.iter().map(|album| {
+                    albums.iter().map(|album| {
                         (
                             album.title.clone(),
                             album.artist_names(),
@@ -175,12 +189,14 @@ pub fn show(
                 );
             } else {
                 section_header(ui, theme, "Artists", width, false);
+                sort_menu(ui, theme, &MATCH_SORTS, &mut state.sort, SortMode::label);
+                let artists = sort_artists(&data.artists, state.sort);
                 intents.extend(album_cards(
                     ui,
                     theme,
                     services,
                     art,
-                    data.artists.iter().map(|artist| {
+                    artists.iter().map(|artist| {
                         (
                             artist.name.clone(),
                             artist.subscribers.clone().unwrap_or_default(),
@@ -226,7 +242,8 @@ pub fn show(
                     "Create one above, then add songs from the Songs tab or the player.",
                 );
             } else {
-                let playlists = data.playlists.clone();
+                sort_menu(ui, theme, &MATCH_SORTS, &mut state.sort, SortMode::label);
+                let playlists = sort_playlists(&data.playlists, state.sort);
                 let columns = card_columns(width);
                 let gap = GRID_GAP;
                 let card_width = ((width - gap * (columns - 1) as f32) / columns as f32).max(80.0);
@@ -289,7 +306,7 @@ pub fn show(
     if let Some(song) = state.add_song.clone() {
         let playlists = data.playlists.clone();
         let theme = theme.clone();
-        let response = crate::widgets::modal(ui.ctx(), &theme, "add_to_playlist", |ui| {
+        let response = crate::widgets::modal(ui.ctx(), &theme, "add_to_playlist", 1.0, |ui| {
             ui.set_width(320.0);
             ui.label(
                 egui::RichText::new(format!("Add “{}” to", song.title))
@@ -337,11 +354,12 @@ pub fn show(
 
 fn liked_tile(ui: &mut Ui, theme: &Theme, count: Option<usize>, width: f32) -> bool {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 64.0), egui::Sense::click());
-    if response.hovered() {
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    if hover_t > 0.0 || press_t > 0.0 {
         ui.painter().rect_filled(
             rect,
             10,
-            crate::theme::state_layer(theme.bg(), true, response.is_pointer_button_down_on()),
+            motion::state_layer_at(theme.bg(), hover_t, press_t),
         );
     }
     let icon_rect = egui::Rect::from_center_size(
@@ -414,6 +432,12 @@ fn library_song_rows(
                 });
             } else if response.radio.as_ref().is_some_and(|radio| radio.clicked()) {
                 intents.push(Intent::StartRadio(song.clone()));
+            } else if response
+                .artist
+                .as_ref()
+                .is_some_and(|artist| artist.clicked())
+            {
+                intents.extend(artist_intent(song));
             } else if response.row.clicked() {
                 intents.push(Intent::Play {
                     songs: songs.to_vec(),
@@ -428,6 +452,14 @@ fn library_song_rows(
     }
     intents
 }
+
+const ALBUM_SORTS: [SortMode; 4] = [
+    SortMode::RecentlyAdded,
+    SortMode::Title,
+    SortMode::Artist,
+    SortMode::Duration,
+];
+const MATCH_SORTS: [SortMode; 2] = [SortMode::RecentlyAdded, SortMode::Title];
 
 type CardRow = (String, String, Route, String);
 
@@ -475,15 +507,16 @@ fn card_columns(width: f32) -> usize {
 /// Library header entry to the listening stats and Wrapped story.
 fn stats_entry(ui: &mut Ui, theme: &Theme, width: f32) -> bool {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 68.0), egui::Sense::click());
-    let fill = if response.hovered() {
-        state_layer(
-            theme.scheme.surface_container_high,
-            true,
-            response.is_pointer_button_down_on(),
-        )
-    } else {
-        theme.scheme.surface_container
-    };
+    let hover_t = motion::t(
+        ui,
+        response.id.with("hover"),
+        response.hovered() || response.is_pointer_button_down_on(),
+        motion::HOVER,
+    );
+    let fill = theme
+        .scheme
+        .surface_container
+        .lerp_to_gamma(theme.scheme.surface_container_high, hover_t);
     ui.painter().rect_filled(rect, 12, fill);
     let icon_center = rect.left_center() + Vec2::new(DP48 / 2.0, 0.0);
     ui.painter()

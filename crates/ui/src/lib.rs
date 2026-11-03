@@ -10,6 +10,7 @@ pub mod desktop;
 pub mod integrations;
 pub mod integrations_worker;
 pub mod mock;
+pub mod motion;
 pub mod pure;
 pub mod routes;
 pub mod screens;
@@ -40,6 +41,7 @@ pub enum RunMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DemoMode {
     Player,
+    PlayerPaused,
     Queue,
     Lyrics,
     Library,
@@ -71,6 +73,7 @@ impl DemoMode {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "player" => Some(Self::Player),
+            "player-paused" => Some(Self::PlayerPaused),
             "queue" => Some(Self::Queue),
             "lyrics" => Some(Self::Lyrics),
             "library" => Some(Self::Library),
@@ -108,6 +111,11 @@ pub struct RunOptions {
     pub height: u32,
     /// Play a sample track and open a screen before capturing.
     pub demo: Option<DemoMode>,
+    /// Screenshot-only synthetic pointer position (egui points). Used by the
+    /// docs tooling; Wayland denies real hover control to external tools.
+    pub pointer: Option<(f32, f32)>,
+    /// Screenshot-only synthetic click at `pointer`, injected around frame 30.
+    pub click: bool,
 }
 
 impl Default for RunOptions {
@@ -117,6 +125,8 @@ impl Default for RunOptions {
             width: app::DEFAULT_WIDTH,
             height: app::DEFAULT_HEIGHT,
             demo: None,
+            pointer: None,
+            click: false,
         }
     }
 }
@@ -138,16 +148,22 @@ pub fn run(options: RunOptions) -> eframe::Result {
         viewport,
         ..Default::default()
     };
-    let instance = match desktop::take_instance() {
-        Ok(Some(guard)) => Some(guard),
-        Ok(None) => {
-            println!("forwarded to the running Metrolist instance");
-            return Ok(());
+    // Batch modes are tools: they may run next to an interactive instance, and
+    // the single-instance guard would otherwise forward their argv and exit.
+    let instance = if matches!(options.mode, RunMode::Normal) {
+        match desktop::take_instance() {
+            Ok(Some(guard)) => Some(guard),
+            Ok(None) => {
+                println!("forwarded to the running Metrolist instance");
+                return Ok(());
+            }
+            Err(error) => {
+                eprintln!("single instance unavailable: {error}");
+                None
+            }
         }
-        Err(error) => {
-            eprintln!("single instance unavailable: {error}");
-            None
-        }
+    } else {
+        None
     };
     eframe::run_native(
         "metrolist",

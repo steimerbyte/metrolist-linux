@@ -4,11 +4,12 @@ Release gate for the Rust port (repo root; run every command from there).
 Verdict: **RELEASE READY**.
 
 - Toolchain: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`, edition 2021, GPL-3.0-only,
-  workspace version `0.1.2`.
+  workspace version `0.1.3`.
 - Workspace: `crates/{core,innertube,lyrics,store,downloads,audio,integrations,ui}`,
   binary `metrolist` (`crates/ui/src/main.rs`).
-- The tree described here is the published source of the v0.1.2 release
-  (v0.1.1 and v0.1.0 remain published at their tags).
+- The v0.1.2 record below (gate, artifact, live checks) is historical; the
+  v0.1.3 record is the section at the end of this file. v0.1.1 and v0.1.0
+  remain published at their tags.
 
 ## Gate commands
 
@@ -248,3 +249,134 @@ This manifest is for packaging provenance, not the Verus/proof freeze in
 
 The adversarial proof gate (`proofs/run-gates.sh`) is owned by the proof
 workstream; this check ran only `proofs/check-drift.sh`, which is green.
+
+## Release check v0.1.3 — source gate (2026-11-03)
+
+Workspace version `0.1.3` (`Cargo.toml`/`Cargo.lock`). Stable tree, every
+command run from the repo root. These results supersede the 0.1.2 gate above.
+
+| Command | Result |
+|---|---|
+| `cargo fmt --all -- --check` | pass (no diff) |
+| `cargo check --workspace --all-targets --locked` | pass |
+| `cargo test --workspace --no-fail-fast --locked` | pass — **744 passed, 0 failed, 31 ignored** |
+| `cargo clippy --workspace --all-targets --locked` | pass (exit 0) — 16 unique warnings, all in `ml-ui` (reported, not fixed in the freeze) |
+| `cargo build -p ml-ui --bin metrolist --locked` | pass |
+| `metrolist --smoke 120` | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` |
+| `./proofs/check-drift.sh` | `no source drift (21 declared sources match)` |
+| `./proofs/run-gates.sh` | exit 0 |
+
+The 31 ignored tests are the same opt-in live tests (mpv, D-Bus/tray/
+notification services, the single-instance socket, the network, a real account
+cookie file). The per-package split in the 0.1.2 section was not re-measured;
+744/0/31 is the workspace-wide count for 0.1.3.
+
+### Proofs (v0.1.3 freeze)
+
+- 12 pairs, **296 functions verified, 0 errors** (ui 77 → 84 with the two new
+  obligations `pure::play_starts_radio` and `PlaylistOrder::sort_mode`; the
+  other pairs are unchanged from the accepted v0.1.2 freeze).
+- `proofs/FREEZE.sha256` =
+  `17e030a70a3b9eca90aff1bfb5b7a9b666dc76f424c09e20665c5b13feffa8e3`;
+  `gate_sha256` =
+  `09f035e735f511c1f4b097e2f003a3732056a9f034793cf31f3901cd9759ac4b`.
+- Fresh-context reviewer **ACCEPT** for 12/12 pairs (`proofs/REVIEW.md`);
+  `proofs/run-gates.sh` exits 0 and `check-drift.sh` reports 21/21 declared
+  sources matching.
+- Honest limits: the display sorters (`sort_songs`, `playlist_songs`,
+  `sort_albums`, `sort_artists`, `sort_playlists`), the `label` tables, the
+  four `f32` progress helpers, `crates/ui/src/motion.rs` and
+  `screens::search::pill_geometry` are OUT-OF-SUBSET and are not proofs. The
+  `url_route` line-locator erratum in `proofs/radio/SOURCE.md` and
+  `docs/PROOFS.md` is disclosed in `REVIEW.md`.
+
+### Changes in 0.1.3
+
+- **Library sort** — `crates/ui/src/pure.rs` (`SortMode`, `sort_songs`,
+  `sort_albums`, `sort_artists`, `sort_playlists`), `state.rs::LibraryState`,
+  `screens/library.rs`: Recently added/Title/Artist/Album/Duration chips over a
+  display copy; the store order is never mutated.
+- **Playlist order** — `pure.rs` (`PlaylistOrder`, `playlist_songs`),
+  `screens/{detail,local_playlist}.rs`: Default/Recently added/Title/Artist/
+  Duration, consumed by Play and Shuffle with the matching index; reorder is
+  hidden while a sort is active.
+- **Creator links** — `widgets/rows.rs` and `screens/player.rs` open
+  `Route::Artist` from the first artist with a channel id; rows without one
+  keep the play action.
+- **Radio button** — `screens/player.rs`, `widgets/controls.rs`, `app.rs`
+  (`PlayerAction::StartRadio`): immediately right of Repeat, with an active dot
+  for a `QueueSource::Radio` queue.
+- **Progress timeline** — `widgets/controls.rs::progress_slider`: smoothing,
+  hover/drag time bubble, buffering pulse, a single seek on release.
+- **Liked Songs Play All** — `app.rs::Intent::PlayAll` and `screens/liked.rs`:
+  immediate snapshot and mini player; delegates the radio decision to the
+  proven `pure::play_starts_radio`, so a one-song liked list does not become
+  radio while a row tap still does.
+- **Search pill** — `screens/search.rs::pill_geometry`: equal gutters and
+  centring at 405 and 1100 (341 px and 720 px rendered boxes).
+- **Motion** — new `crates/ui/src/motion.rs` plus wiring in `theme/mod.rs`,
+  `widgets/*`, `shell/mod.rs`, `app.rs` and the screens;
+  `crates/core/src/settings.rs::reduce_motion` with the Settings toggle and
+  `METROLIST_REDUCE_MOTION=1`; `docs/MOTION.md` records the tokens, coverage,
+  and the measured rejection of `egui_animate` 0.6 / `blinc_animation` 0.5.1.
+- **Desktop icon** — `assets/icons/metrolist-desktop.svg` master plus 16–1024
+  px PNGs; `packaging/check-icon.sh` validates the set; `.desktop`
+  `Icon=metrolist-desktop` unchanged.
+- **Batch modes** — `crates/ui/src/lib.rs`: `--smoke`/`--screenshot` skip the
+  single-instance guard so they can run beside the installed app.
+
+### Artifact (0.1.3)
+
+- `dist/Metrolist-Desktop-0.1.3-x86_64.AppImage`: **121,031,160 bytes**
+  (115.4 MiB), sha256
+  `19307f8a6a8bf7e4359ced4bb0076871dee0419da16900d47f7fe2b690c91894`;
+  AppImage type 2 (runtime commit `fedfad5`), 249 files; built 2026-11-03 in
+  `rust:1.99.1-bookworm` with `CARGO_BUILD_JOBS=1`, release compile 23m59s,
+  `BUILD_RC=0`.
+- Container binary `build/target-container/release/metrolist`:
+  **61,117,448 bytes**, sha256
+  `66d37d1561dd054780abea69feec58a0df4f911e1e8d2b7fa130304aca08e06a`.
+- Source freeze `docs/SOURCE-FREEZE.sha256`: **247 files**, self-sha256
+  `87f5b3a7c4c386200f7467bf3e6fb0b73daaa0b8b2c92eae5e90f56ac688d007`;
+  `sha256sum -c --quiet` exits 0.
+- GLIBC: app max **2.35**, bundled mpv 0.35.1 max **2.34** (both within the
+  2.36 Debian 12 / Ubuntu 24.04 floor); 177 bundled libraries.
+- `cd dist && sha256sum -c SHA256SUMS` →
+  `Metrolist-Desktop-0.1.3-x86_64.AppImage: OK`.
+- Clean isolated `XDG_*`, real runtime, `METROLIST_TEST_MUTE=1`:
+  `--appimage-extract-and-run --smoke 120` ran twice and printed exactly
+  `SMOKE_OK frames=120 backend=Vulkan home_sections=2` both times, exit 0,
+  0 `ERROR` lines, no `home_sections` variance, no attributable leftover
+  mpv/metrolist/AppRun processes or sockets (the user's pre-existing 0.1.2
+  process was intentionally left running).
+- Installed copy `~/AppImages/metrolist_desktop.appimage`: mode 755 (new
+  inode), same 121,031,160 bytes and sha256;
+  `~/AppImages/metrolist_desktop.sha256` updated (two-space format,
+  `sha256sum -c` OK). Two fresh isolated `XDG_*` homes, real runtime,
+  `METROLIST_TEST_MUTE=1`: `--appimage-extract-and-run --smoke 120` printed
+  exactly `SMOKE_OK frames=120 backend=Vulkan home_sections=2` both times,
+  exit 0 both times, 0 attributable leftover mpv/metrolist/sockets/
+  extractions. The pre-existing 0.1.2 PIDs 4166266/4166314, their 2 mpv
+  children and 3 sockets were the unchanged baseline; the old process was
+  intentionally untouched.
+- Icons: every PNG at 16/32/48/64/128/256/512/1024 validates as 8-bit RGBA;
+  `.DirIcon` → `metrolist-desktop.png` → 512; the `.desktop` entry keeps
+  `Icon=metrolist-desktop` and `Exec=metrolist`; `desktop-file-validate`
+  exits 0. The Gearlever copy `~/AppImages/.icons/metrolist_desktop` is
+  unchanged by this rebuild: the 512 PNG (66,120 bytes, 512×512 RGBA, sha256
+  `f29549ff98761efa4d5ec87c97a1c76aa869451be714d7e4d876f95203927137`);
+  the desktop entry still uses that path.
+- No secrets or cookies in the image (no cookie-value patterns); the
+  account/session state was untouched.
+
+### UI audit (0.1.3)
+
+`docs/UI-AUDIT-0.1.3.md`: **PASS** on the shipped PNGs plus the player/row/
+queue layout code — no blocker or should-fix left. Remaining nits only: the
+16 px icon, sort-menu elevation, 900 px player composition, capture-state
+placeholders / 1 s queue duration, and a narrow-row queue text/hit edge.
+
+The audit-fix tranche added four tests (3 + 1). `cargo test -p ml-ui --lib` is
+109 passed (was 105); the full `cargo test -p ml-ui` is 122 = 109 lib + 13
+integration, 6 live tests ignored. The workspace gate is **744 passed / 0
+failed / 31 ignored**.

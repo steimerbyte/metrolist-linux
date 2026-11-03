@@ -5,7 +5,7 @@
 | file | sha256 (at freeze) |
 |------|--------------------|
 | crates/ui/src/services.rs | 1434dc75dd41e13d276b596839716aa3bf2202198f86eebcc7a1df1a3402a3f5 |
-| crates/ui/src/app.rs | d6d8f5a17c5c1afbba1fb62203bab9b6ce3bea464b436766d628a7d5de8de7cb |
+| crates/ui/src/app.rs | 4a5fbf4f5337a2b53d070dc9ae5639a5410abf1ef369bc6d58c35e6501f55244 |
 | crates/innertube/src/lib.rs | bfa89ea531da62a31afc59bee4978d51606f9d372c72a3c325a21679650a8890 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
@@ -153,3 +153,31 @@ in the table above (`1434dc75…`); `crates/ui/src/app.rs` and
 
 `expand_import_path` itself is proven in `proofs/ui` (it lives in `pure.rs`);
 this area only records the call site, which is out of subset.
+
+## Re-freeze 2026-11-03 v0.1.3 (UI tranche)
+
+Reason: the functional UI tranche touched `crates/ui/src/app.rs`; the new hash
+is in the table above (`4a5fbf4f…`). `crates/ui/src/services.rs`
+(`1434dc75…`) and `crates/innertube/src/lib.rs` (`bfa89ea5…`) did not change.
+
+Proven bodies, re-read at the new revision and byte-identical:
+
+- `url_route` — unchanged, verbatim (now L157–L165 because of added imports):
+  `Video` returns `None`, `Album` with the `MPRE` prefix is the album route,
+  other albums/playlists/artists keep their route and id.
+- `radio_event` / `radio_fallback` — unchanged file.
+- `search_body` / `SearchFilter::params` — unchanged file.
+
+The rest of `app.rs` is out of subset. The tranche added 9 exec functions and
+changed 19 (`App::new`, `start_demo`, `start_player_demo`, `drain_events`,
+`play_songs`, `submit_search`, `set_route`, `go_back`, `apply_intents`,
+`apply_player`, `route_content`, `apply_settings_actions`, `shell`,
+`mini_player`, `player_route`, `queue_overlay`, `after_frame`, `ui`,
+`center_column`); the new ones are `demo_queue`, `mute_for_demo`,
+`demo_seek_once`, `play_intent`, `enter_shift`, `set_route_with_shift`,
+`route_motion`, `raw_input_hook`, `center_column_shift`. They are egui layout,
+motion, screenshot input, or `Services` side effects — no pure decision is left
+in this file. `Intent::PlayAll` is routed through `App::play_intent`, which
+calls `pure::play_starts_radio`; that predicate is proven in `proofs/ui` (this
+area only records the call site). No proof text changed and no new obligation
+is claimed here.

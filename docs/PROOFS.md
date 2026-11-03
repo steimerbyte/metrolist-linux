@@ -113,7 +113,7 @@ commit against the parser from the pinned Verus release (Lynette's own
 source drift (`crates/**` changed without a re-freeze) as well as on a failing
 gate; CI duplicates no version pins, it sources `proofs/verus.env`.
 
-Current status: **12 proofs, 289 functions verified, 0 errors**.
+Current status: **12 proofs, 296 functions verified, 0 errors**.
 
 | proof | source | verified | log |
 |-------|--------|---------:|-----|
@@ -123,12 +123,12 @@ Current status: **12 proofs, 289 functions verified, 0 errors**.
 | `proofs/stream` | `crates/innertube/src/{stream.rs, player.rs, context.rs}` | 19 | `proofs/logs/stream.log` |
 | `proofs/media` | `crates/core/src/media.rs` | 4 | `proofs/logs/media.log` |
 | `proofs/integrations` | `crates/integrations/src/mapping.rs` | 13 | `proofs/logs/integrations.log` |
-| `proofs/audio` | `crates/audio/src/{controller,engine}.rs` | 12 | `proofs/logs/audio.log` |
+| `proofs/audio` | `crates/audio/src/{controller,engine}.rs` | 15 | `proofs/logs/audio.log` |
 | `proofs/pages` | `crates/innertube/src/pages/next.rs` | 7 | `proofs/logs/pages.log` |
 | `proofs/together` | `crates/together/src/{clock,sync,codec,model}.rs` | 64 | `proofs/logs/together.log` |
 | `proofs/radio` | `crates/ui/src/{services,app}.rs`, `crates/innertube/src/lib.rs` | 12 | `proofs/logs/radio.log` |
 | `proofs/recognition` | `crates/recognition/src/signature.rs` | 26 | `proofs/logs/recognition.log` |
-| `proofs/ui` | `crates/ui/src/pure.rs`, `crates/downloads/src/model.rs` | 65 | `proofs/logs/ui.log` |
+| `proofs/ui` | `crates/ui/src/pure.rs`, `crates/downloads/src/model.rs` | 84 | `proofs/logs/ui.log` |
 
 Freeze integrity: `proofs/FREEZE.sha256` covers both files of every pair, every
 `SOURCE.md` and `SOURCES.list`; it is checked by every gate and by
@@ -330,12 +330,19 @@ Verus cannot take: I/O, async, floats, serde, FFI/D-Bus, `format!`, iterators,
 | `pure::download_badge` | VERIFIED | `proofs/ui` (state + percent model, `percent <= 100`): `None` entry ⇒ `None` badge, `Downloading(p)` carries exactly the percent |
 | `pure::download_icon`, `pure::download_click` | VERIFIED | `proofs/ui`: icon ids are the real table (one per badge, `1..=6`); click table proven and `Completed` is the only inert click |
 | `pure::cookie_import_format` | VERIFIED | `proofs/ui` (UTF-8 bytes; ASCII `trim_start`; `lines()` = runs of non-`\n`): JSON wins on a trimmed `[`/`{`, then a `# Netscape` header or a ≥7-field tab line, then any `=`, else unknown |
+| `pure::play_starts_radio` (v0.1.3) | VERIFIED | `proofs/ui` (full six-variant `QueueSource`): true exactly for a one-song `List` request that is not an explicit Play all; `r ⇒ one song`, `r ⇒ List`, `play_all ⇒ !r`, `0 songs ⇒ !r`; `lemma_play_all_is_never_radio`, `lemma_radio_needs_exactly_one`, `lemma_radio_needs_list` |
+| `pure::PlaylistOrder::sort_mode` (v0.1.3) | VERIFIED | `proofs/ui` (enum table): `Default` ⇔ `None`, every other order maps to its own sort mode, `SortMode::Album` is never selected (`lemma_default_only_none`, `lemma_album_unreachable`) |
 | `pure::{seek_target, volume_target, crossfade_seconds, playback_speed, speed_percent, normalization_gain, volume_step, clamp_eq_bands}` | OUT-OF-SUBSET | `f32`/`f64` clamp+round; no float encoding in vstd, so no bound on the returned float is claimed (the source doc comments' postconditions are unproven here) |
+| `pure::{progress_fraction, fraction_at, smooth_progress, progress_pulse}` (v0.1.3) | OUT-OF-SUBSET | `f32`/`f64` division, NaN/∞ checks, `clamp`, `sin`, `exp`; the `0.0..=1.0` postconditions are unproven (same float policy) |
+| `pure::{sort_songs, playlist_songs, sort_albums, sort_artists, sort_playlists}` (v0.1.3) | OUT-OF-SUBSET | `Vec<Song/Album/ArtistItem/PlaylistRecord>` with `String` keys, `sort_by_cached_key` (stable std sort), `to_lowercase`; no vstd string-order or stable-sort model |
+| `pure::{SortMode::label, PlaylistOrder::label}` (v0.1.3) | CANDIDATE | enum → `&'static str` literal table, no arithmetic; pinned by the unit tests, not transcribed (same policy as `download_hint`) |
 | `pure::{wrap_vinyl_angle, advance_vinyl_angle}` (v0.1.1) | OUT-OF-SUBSET | `f32` modulo/`TAU` wrap and `dt.clamp(0.0, 0.05)`; same float policy, pinned by the UI rotation tests |
 | `shell::{NavAction, active_tab, settings_active}` nav routing (v0.1.1) | OUT-OF-SUBSET | UI routing state machine over the current route; `apply_nav` is a table dispatch with side effects |
 | `pure::{crossfade_label, gain_label, bytes_text, download_progress_text, account_error_message, local_file_url, parse_deep_link, first_deep_link, sanitize_proxy_url, valid_search_query}` | OUT-OF-SUBSET | `String`/`format!`/`&str` scanning (`trim`, `chars`, `strip_prefix`) and `Path` percent-encoding; `account_error_message` additionally maps error payload strings, so only its arm selection could be modelled |
 | `pure::{download_hint, tray_command, stats_period_label, month_short}` | CANDIDATE | literal enum/table → text (`&'static str`); no arithmetic, pinned by the unit tests, not transcribed into this pair |
 | `pure::parse_persisted_queue` | OUT-OF-SUBSET | `serde_json` + `HashSet` |
+| `motion` (v0.1.3) | OUT-OF-SUBSET | `f32` cubic-bezier/easing arithmetic and `eframe::egui` animation state (`Context` temp data, `animate_bool_with_time_and_easing`); pinned by the motion unit tests (endpoints, monotonicity, idle repaint, reduced-motion snapping), not transcribed into either pair |
+| `screens::search::pill_geometry` (v0.1.3) | OUT-OF-SUBSET | `f32` clamp/centring arithmetic; `screens/search.rs` is not a declared proof source, pinned by its geometry tests |
 
 ## Candidate backlog (ordered)
 
@@ -481,7 +488,7 @@ remains green (274 verified / 0 errors, 12 pairs); `REVIEW.md` now carries the
 current ACCEPT.
 
 What green proves, per the gate definition above: each frozen `candidate.rs`
-verifies under the pinned Verus (`0.2026.11.02.8bf68ee`, 289 verified / 0
+verifies under the pinned Verus (`0.2026.11.02.8bf68ee`, 296 verified / 0
 errors across the 12 pairs); Lynette `additions` accepts it; `trust_scan.py`
 finds no `assume`/`admit`/`external_body`/`axiom`/`assume_specification`/
 `unimplemented!`; the pair matches `FREEZE.sha256`; and `spec_guard.py` plus
@@ -584,3 +591,54 @@ has signed `v0.1.2` for this freeze (`freeze_sha256`
 The earlier v0.1.1 freeze (`1a07e2b5…` / `9ce7fb1a…`) remains recorded as
 previously ACCEPTED; the current ACCEPT covers v0.1.2 and the release gate now
 passes.
+
+### Re-freeze 2026-11-03 v0.1.3 (UI + motion tranche)
+
+Twelve pairs are frozen with `proofs/FREEZE.sha256` =
+`17e030a70a3b9eca90aff1bfb5b7a9b666dc76f424c09e20665c5b13feffa8e3`
+(37 files). **296 functions verified / 0 errors** (ui 77 -> 84 with the two new
+obligations; the other pairs are unchanged). Every per-pair gate passes (Verus
+0 errors, Lynette `additions`, trust scan, freeze manifest);
+`check-drift.sh` reports 21/21 declared sources matching, and
+`spec_guard_selftest.py` passes (12 clean pairs, 12 mutations rejected, 2
+freeze tampers rejected). `docs/SOURCE-FREEZE.sha256` was **not** regenerated;
+release provenance is owned by the release step.
+
+Source delta since the accepted v0.1.2 freeze (all re-read; only `pure.rs`
+gains obligations):
+
+- `crates/ui/src/pure.rs` (`692cda7e…`) — additive: `play_starts_radio` (now
+  proven) and `PlaylistOrder::sort_mode` (now proven), the display-sort
+  helpers, the two `label` functions and four progress helpers. Every
+  previously proven function and the nine transcription helpers are
+  byte-identical; `crates/downloads/src/model.rs` is unchanged.
+- `crates/ui/src/app.rs` (`4a5fbf4f…`) — 9 exec functions added and 19 changed
+  in the UI + motion tranche (radio routing, snapshot sync, route motion,
+  screenshot input, demo helpers, `reduce_motion` theme key). `url_route` is
+  verbatim (L160–L168); `radio_event`/`radio_fallback` and
+  `search_body`/`SearchFilter::params` live in unchanged files. Everything else
+  is OUT-OF-SUBSET; `Intent::PlayAll` delegates to the proven
+  `pure::play_starts_radio`.
+- `crates/core/src/settings.rs` (`e3a390e7…`) — one field
+  `reduce_motion: bool` plus its default; `seed_rgb` and the default seed are
+  byte-identical, so no obligation changed.
+- `crates/ui/src/{motion.rs,screens/search.rs}` — new motion module and
+  `pill_geometry`; both floats/egui, OUT-OF-SUBSET, and **not** declared proof
+  sources.
+- `crates/ui/src/services.rs` (`1434dc75…`) and `crates/innertube/src/lib.rs`
+  (`bfa89ea5…`) — unchanged.
+
+`REVIEW.md` carries a fresh ACCEPT for this freeze (signed by a fresh-context
+reviewer who re-read the two new obligations, recomputed every changed
+`SOURCE.md` hash, re-ran `run-gates.sh`, the per-pair gates, `check-drift.sh`,
+`freeze-check.sh`, `spec_guard.py` and the trust scan, and re-signed):
+`freeze_sha256`
+`17e030a70a3b9eca90aff1bfb5b7a9b666dc76f424c09e20665c5b13feffa8e3`,
+`gate_sha256` `09f035e735f511c1f4b097e2f003a3732056a9f034793cf31f3901cd9759ac4b`.
+`proofs/run-gates.sh` exits 0 on this tree. The reviewer disclosed a
+non-blocking erratum: the `url_route` locator in this section and in
+`proofs/radio/SOURCE.md` said L157–L165, while the frozen `app.rs`
+(`4a5fbf4f…`) has the byte-identical body at L160–L168. This file now has the
+right line; the `SOURCE.md` parenthetical is corrected at the next re-freeze.
+`docs/SOURCE-FREEZE.sha256` was deliberately not regenerated by this freeze;
+release provenance is owned by the release step.

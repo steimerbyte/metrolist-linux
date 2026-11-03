@@ -254,6 +254,22 @@ pub fn show(
         theme,
         "Dynamic desktop accent detection is not available yet; seed colour is used.",
     ));
+    ui.add_space(DP4);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = DP8;
+        if chip(ui, theme, "Reduce motion", settings.reduce_motion).clicked() {
+            settings.reduce_motion = !settings.reduce_motion;
+            changed = true;
+        }
+        ui.label(caption(
+            theme,
+            if settings.reduce_motion {
+                "Animations snap to their end state."
+            } else {
+                "Hover, page and dialog transitions are animated."
+            },
+        ));
+    });
 
     let playback_anchor = egui::Rect::from_min_size(ui.cursor().min, Vec2::new(1.0, 1.0));
     section(ui, theme, "Playback");

@@ -5,14 +5,15 @@
 //! Rendering, egui layout and async I/O are outside Verus's Rust subset and are
 //! therefore not specified here.
 
+use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::routes::Route;
-use ml_core::{Artist, MlError, Queue, Song};
+use ml_core::{Album, Artist, ArtistItem, MlError, Queue, QueueSource, Song};
 use ml_downloads::{progress_percent, Download, DownloadState};
 use ml_recognition::{RecognitionError, RecognitionResult};
-use ml_store::{StatsPeriod, StatsReport, StatsSummary};
+use ml_store::{PlaylistRecord, StatsPeriod, StatsReport, StatsSummary};
 
 /// Slow vinyl rotation, 10 degrees per second.
 pub const VINYL_RADIANS_PER_SEC: f32 = 10.0 * std::f32::consts::PI / 180.0;
@@ -354,6 +355,74 @@ pub fn seek_target(normalized: f32, duration_ms: u64) -> u64 {
         return 0;
     }
     (scaled as u64).min(duration_ms)
+}
+
+/// Normalized playback progress for the player timeline.
+///
+/// Postconditions: `0.0 <= result <= 1.0`; a zero or unknown duration is `0.0`
+/// so the UI never invents a position.
+pub fn progress_fraction(position_ms: u64, duration_ms: u64) -> f32 {
+    if duration_ms == 0 {
+        return 0.0;
+    }
+    let fraction = position_ms as f64 / duration_ms as f64;
+    if fraction.is_nan() {
+        0.0
+    } else {
+        fraction.clamp(0.0, 1.0) as f32
+    }
+}
+
+/// Normalized position of a pointer inside a track.
+///
+/// The result is clamped to `0.0..=1.0`; a zero-width track maps to `0.0`.
+pub fn fraction_at(pointer_x: f32, track_left: f32, track_width: f32) -> f32 {
+    if !pointer_x.is_finite() || !track_left.is_finite() || !track_width.is_finite() {
+        return 0.0;
+    }
+    if track_width <= 0.0 {
+        return 0.0;
+    }
+    let fraction = (pointer_x - track_left) / track_width;
+    if fraction.is_nan() {
+        0.0
+    } else {
+        fraction.clamp(0.0, 1.0)
+    }
+}
+
+/// Frame-rate independent approach of the drawn fill to the real position.
+///
+/// Exponential smoothing with a 120 ms time constant: two 16 ms steps land
+/// where one 32 ms step does. Non-finite input snaps to the clamped target;
+/// long frames are capped so a stall cannot make the fill jump.
+pub fn smooth_progress(current: f32, target: f32, dt: f32) -> f32 {
+    if target.is_nan() {
+        return 0.0;
+    }
+    let target = target.clamp(0.0, 1.0);
+    if !current.is_finite() || !dt.is_finite() {
+        return target;
+    }
+    if dt <= 0.0 {
+        return current.clamp(0.0, 1.0);
+    }
+    let alpha = 1.0 - (-dt.min(0.1) / 0.12).exp();
+    let next = current + (target - current) * alpha;
+    if (target - next).abs() < 0.0005 {
+        target
+    } else {
+        next.clamp(0.0, 1.0)
+    }
+}
+
+/// Subtle buffering pulse in `0.0..=1.0`, one cycle every 1.2 s.
+pub fn progress_pulse(time_s: f32) -> f32 {
+    if !time_s.is_finite() {
+        return 0.5;
+    }
+    let phase = (time_s * std::f32::consts::TAU / 1.2).sin();
+    0.5 + 0.5 * phase
 }
 
 /// Volume from a slider value.
@@ -1053,6 +1122,188 @@ pub fn back_route(stack: &mut Vec<Route>) -> Option<Route> {
     stack.pop()
 }
 
+/// Whether a play request is a single-row tap that should continue as radio.
+///
+/// Row taps of a one-song list do; an explicit "Play all" never does, whatever
+/// the list length.
+pub fn play_starts_radio(song_count: usize, source: QueueSource, play_all: bool) -> bool {
+    !play_all && song_count == 1 && source == QueueSource::List
+}
+
+/// Display sort for library lists.
+///
+/// Sorting only reorders the rendered copy: the store order and every
+/// persisted collection stay untouched. The default matches upstream's
+/// recently-added library order.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SortMode {
+    #[default]
+    RecentlyAdded,
+    Title,
+    Artist,
+    Album,
+    Duration,
+}
+
+impl SortMode {
+    pub const ALL: [SortMode; 5] = [
+        Self::RecentlyAdded,
+        Self::Title,
+        Self::Artist,
+        Self::Album,
+        Self::Duration,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::RecentlyAdded => "Recently added",
+            Self::Title => "Title",
+            Self::Artist => "Artist",
+            Self::Album => "Album",
+            Self::Duration => "Duration",
+        }
+    }
+}
+
+/// Display order for playlist pages; [`PlaylistOrder::Default`] keeps the
+/// playlist's stored order and is the default for playlists.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PlaylistOrder {
+    #[default]
+    Default,
+    RecentlyAdded,
+    Title,
+    Artist,
+    Duration,
+}
+
+impl PlaylistOrder {
+    pub const ALL: [PlaylistOrder; 5] = [
+        Self::Default,
+        Self::RecentlyAdded,
+        Self::Title,
+        Self::Artist,
+        Self::Duration,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "Default",
+            Self::RecentlyAdded => "Recently added",
+            Self::Title => "Title",
+            Self::Artist => "Artist",
+            Self::Duration => "Duration",
+        }
+    }
+
+    fn sort_mode(self) -> Option<SortMode> {
+        match self {
+            Self::Default => None,
+            Self::RecentlyAdded => Some(SortMode::RecentlyAdded),
+            Self::Title => Some(SortMode::Title),
+            Self::Artist => Some(SortMode::Artist),
+            Self::Duration => Some(SortMode::Duration),
+        }
+    }
+}
+
+/// Display-sorted copy of `songs`; ties keep their input (store) order.
+/// Missing timestamps, artists, albums and durations sort last.
+pub fn sort_songs(songs: &[Song], mode: SortMode) -> Vec<Song> {
+    let mut out = songs.to_vec();
+    match mode {
+        SortMode::RecentlyAdded => {
+            out.sort_by_cached_key(|song| Reverse(song.in_library.or(song.liked)));
+        }
+        SortMode::Title => {
+            out.sort_by_cached_key(|song| (song.title.is_empty(), song.title.to_lowercase()));
+        }
+        SortMode::Artist => {
+            out.sort_by_cached_key(|song| {
+                let names = song.artist_names();
+                (names.is_empty(), names.to_lowercase())
+            });
+        }
+        SortMode::Album => {
+            out.sort_by_cached_key(|song| {
+                song.album
+                    .as_ref()
+                    .map(|album| (false, album.title.to_lowercase()))
+                    .unwrap_or_else(|| (true, String::new()))
+            });
+        }
+        SortMode::Duration => {
+            out.sort_by_cached_key(|song| (song.duration.is_none(), song.duration.unwrap_or(0)));
+        }
+    }
+    out
+}
+
+/// Display order for a playlist page. `Default` (and unsupported fallbacks)
+/// preserve the stored order, which also settles songs without timestamps.
+pub fn playlist_songs(songs: &[Song], order: PlaylistOrder) -> Vec<Song> {
+    match order.sort_mode() {
+        Some(mode) => sort_songs(songs, mode),
+        None => songs.to_vec(),
+    }
+}
+
+/// Display-sorted copy of library albums. Albums carry no library timestamp,
+/// so RecentlyAdded keeps the loaded order.
+pub fn sort_albums(albums: &[Album], mode: SortMode) -> Vec<Album> {
+    let mut out = albums.to_vec();
+    match mode {
+        SortMode::RecentlyAdded | SortMode::Duration => {}
+        SortMode::Title | SortMode::Album => {
+            out.sort_by_cached_key(|album| (album.title.is_empty(), album.title.to_lowercase()));
+        }
+        SortMode::Artist => {
+            out.sort_by_cached_key(|album| {
+                let names = album.artist_names();
+                (names.is_empty(), names.to_lowercase())
+            });
+        }
+    }
+    out
+}
+
+/// Display-sorted copy of library artists. Artists carry no library timestamp
+/// or duration, so those modes keep the loaded order.
+pub fn sort_artists(artists: &[ArtistItem], mode: SortMode) -> Vec<ArtistItem> {
+    let mut out = artists.to_vec();
+    match mode {
+        SortMode::RecentlyAdded | SortMode::Duration => {}
+        SortMode::Title | SortMode::Artist | SortMode::Album => {
+            out.sort_by_cached_key(|artist| (artist.name.is_empty(), artist.name.to_lowercase()));
+        }
+    }
+    out
+}
+
+/// Display-sorted copy of local playlists. RecentlyAdded uses the playlist's
+/// updated/created timestamp (newest first), with missing timestamps last.
+pub fn sort_playlists(playlists: &[PlaylistRecord], mode: SortMode) -> Vec<PlaylistRecord> {
+    let mut out = playlists.to_vec();
+    match mode {
+        SortMode::RecentlyAdded => {
+            out.sort_by_cached_key(|playlist| Reverse(playlist.updated_at.or(playlist.created_at)));
+        }
+        SortMode::Title | SortMode::Album => {
+            out.sort_by_cached_key(|playlist| {
+                (playlist.name.is_empty(), playlist.name.to_lowercase())
+            });
+        }
+        SortMode::Artist => {
+            out.sort_by_cached_key(|playlist| match &playlist.author {
+                Some(author) => (author.is_empty(), author.to_lowercase()),
+                None => (true, String::new()),
+            });
+        }
+        SortMode::Duration => {}
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1613,5 +1864,222 @@ mod tests {
         assert_eq!(back_route(&mut stack), Some(Route::Search));
         assert_eq!(back_route(&mut stack), Some(Route::Home));
         assert_eq!(back_route(&mut stack), None);
+    }
+
+    fn sort_song(
+        id: &str,
+        title: &str,
+        artist: &str,
+        album: Option<&str>,
+        duration: Option<u32>,
+    ) -> Song {
+        Song {
+            id: id.into(),
+            title: title.into(),
+            artists: if artist.is_empty() {
+                Vec::new()
+            } else {
+                vec![Artist::new(artist, Some(format!("UC{id}")))]
+            },
+            album: album.map(|album| ml_core::AlbumRef {
+                id: format!("A{id}"),
+                title: album.into(),
+            }),
+            duration,
+            ..Song::default()
+        }
+    }
+
+    fn ids(songs: &[Song]) -> Vec<&str> {
+        songs.iter().map(|song| song.id.as_str()).collect()
+    }
+
+    #[test]
+    fn sort_songs_covers_every_mode_with_stable_ties_and_missing_last() {
+        let mut songs = vec![
+            sort_song("a", "beta", "Zed", Some("Same"), Some(90)),
+            sort_song("b", "Alpha", "amy", None, Some(30)),
+            sort_song("c", "", "", Some("same"), None),
+            sort_song("d", "gamma", "Amy", Some("Another"), Some(30)),
+        ];
+        songs[0].in_library = Some(10);
+        songs[1].liked = Some(40);
+        songs[2].in_library = Some(30);
+
+        assert_eq!(
+            ids(&sort_songs(&songs, SortMode::RecentlyAdded)),
+            vec!["b", "c", "a", "d"],
+            "newest timestamp first, missing last"
+        );
+        assert_eq!(
+            ids(&sort_songs(&songs, SortMode::Title)),
+            vec!["b", "a", "d", "c"],
+            "empty title last, ASCII case-insensitive"
+        );
+        assert_eq!(
+            ids(&sort_songs(&songs, SortMode::Artist)),
+            vec!["b", "d", "a", "c"],
+            "Amy ties keep input order; missing artist last"
+        );
+        assert_eq!(
+            ids(&sort_songs(&songs, SortMode::Album)),
+            vec!["d", "a", "c", "b"],
+            "album title, empty last; equal album text keeps input order"
+        );
+        assert_eq!(
+            ids(&sort_songs(&songs, SortMode::Duration)),
+            vec!["b", "d", "a", "c"],
+            "shortest first, equal durations stable, missing last"
+        );
+        assert_eq!(
+            ids(&songs),
+            vec!["a", "b", "c", "d"],
+            "the stored order is never mutated"
+        );
+        assert_eq!(SortMode::default(), SortMode::RecentlyAdded);
+        assert_eq!(SortMode::ALL.len(), 5);
+    }
+
+    #[test]
+    fn playlist_order_default_preserves_order_and_timestamps_fall_back() {
+        let mut songs = vec![
+            sort_song("first", "z", "b", None, None),
+            sort_song("second", "a", "a", None, None),
+        ];
+        assert_eq!(
+            ids(&playlist_songs(&songs, PlaylistOrder::Default)),
+            vec!["first", "second"]
+        );
+        assert_eq!(
+            ids(&playlist_songs(&songs, PlaylistOrder::RecentlyAdded)),
+            vec!["first", "second"],
+            "no timestamps keeps the playlist order"
+        );
+        assert_eq!(
+            ids(&playlist_songs(&songs, PlaylistOrder::Title)),
+            vec!["second", "first"]
+        );
+        songs[1].liked = Some(5);
+        assert_eq!(
+            ids(&playlist_songs(&songs, PlaylistOrder::RecentlyAdded)),
+            vec!["second", "first"]
+        );
+        assert_eq!(PlaylistOrder::default(), PlaylistOrder::Default);
+        assert_eq!(PlaylistOrder::ALL.len(), 5);
+    }
+
+    #[test]
+    fn album_artist_and_playlist_sorts_are_display_only() {
+        let album = |id: &str, title: &str, artist: &str, duration: u32| Album {
+            id: id.into(),
+            title: title.into(),
+            artists: vec![Artist::new(artist, None)],
+            duration: Some(duration),
+            ..Album::default()
+        };
+        let albums = vec![
+            album("1", "Beta", "Zed", 100),
+            album("2", "alpha", "Amy", 50),
+        ];
+        let sorted = sort_albums(&albums, SortMode::Title);
+        assert_eq!(sorted[0].title, "alpha");
+        assert_eq!(sort_albums(&albums, SortMode::Artist)[0].title, "alpha");
+        assert_eq!(sort_albums(&albums, SortMode::Duration)[0].title, "Beta");
+        assert_eq!(
+            sort_albums(&albums, SortMode::RecentlyAdded)[0].title,
+            "Beta"
+        );
+        assert_eq!(albums[0].title, "Beta", "input order untouched");
+
+        let artists = vec![
+            ArtistItem {
+                id: "1".into(),
+                name: "Zed".into(),
+                ..ArtistItem::default()
+            },
+            ArtistItem {
+                id: "2".into(),
+                name: "amy".into(),
+                ..ArtistItem::default()
+            },
+        ];
+        assert_eq!(sort_artists(&artists, SortMode::Title)[0].name, "amy");
+        assert_eq!(sort_artists(&artists, SortMode::Duration)[0].name, "Zed");
+
+        let record = |id: &str, name: &str, updated: Option<i64>| PlaylistRecord {
+            id: id.into(),
+            name: name.into(),
+            created_at: None,
+            updated_at: updated,
+            ..PlaylistRecord::default()
+        };
+        let playlists = vec![record("1", "Old", Some(10)), record("2", "New", Some(30))];
+        assert_eq!(
+            sort_playlists(&playlists, SortMode::RecentlyAdded)[0].name,
+            "New"
+        );
+        assert_eq!(sort_playlists(&playlists, SortMode::Title)[0].name, "New");
+        assert_eq!(playlists[0].name, "Old", "input order untouched");
+    }
+
+    #[test]
+    fn progress_helpers_are_total_and_frame_rate_independent() {
+        assert_eq!(progress_fraction(0, 0), 0.0);
+        assert_eq!(progress_fraction(5, 0), 0.0);
+        assert!((progress_fraction(30_000, 120_000) - 0.25).abs() < 1e-6);
+        assert_eq!(progress_fraction(500_000, 120_000), 1.0);
+        assert_eq!(fraction_at(55.0, 5.0, 100.0), 0.5);
+        assert_eq!(fraction_at(0.0, 5.0, 100.0), 0.0);
+        assert_eq!(fraction_at(500.0, 5.0, 100.0), 1.0);
+        assert_eq!(fraction_at(5.0, 5.0, 0.0), 0.0);
+        assert_eq!(fraction_at(f32::NAN, 5.0, 100.0), 0.0);
+
+        let single = smooth_progress(0.0, 1.0, 0.032);
+        let mut stepped = smooth_progress(0.0, 1.0, 0.016);
+        stepped = smooth_progress(stepped, 1.0, 0.016);
+        assert!((single - stepped).abs() < 1e-4, "{single} vs {stepped}");
+        assert!(single > 0.0 && single < 1.0);
+        assert!(smooth_progress(1.0, 0.0, 0.0) >= 0.0);
+        assert_eq!(smooth_progress(f32::NAN, 0.4, 0.016), 0.4);
+        assert_eq!(smooth_progress(0.2, f32::NAN, 0.016), 0.0);
+        assert_eq!(smooth_progress(0.2, 0.5, f32::NAN), 0.5);
+        for step in 0..40 {
+            let value = smooth_progress(0.0, 1.0, step as f32 * 0.01);
+            assert!((0.0..=1.0).contains(&value));
+        }
+
+        for time in [0.0, 0.3, 0.6, 0.9, 1.2, -0.4] {
+            let pulse = progress_pulse(time);
+            assert!((0.0..=1.0).contains(&pulse));
+            assert!((progress_pulse(time) - progress_pulse(time + 1.2)).abs() < 1e-3);
+        }
+        assert_eq!(progress_pulse(f32::INFINITY), 0.5);
+    }
+
+    #[test]
+    fn play_all_never_starts_radio_but_a_one_song_row_tap_does() {
+        use ml_core::QueueSource;
+        for count in 0..=2 {
+            assert!(
+                !play_starts_radio(count, QueueSource::List, true),
+                "Play all with {count} songs must stay a list play"
+            );
+        }
+        assert!(play_starts_radio(1, QueueSource::List, false));
+        assert!(!play_starts_radio(0, QueueSource::List, false));
+        assert!(!play_starts_radio(2, QueueSource::List, false));
+        for source in [
+            QueueSource::List,
+            QueueSource::Album,
+            QueueSource::Playlist,
+            QueueSource::Artist,
+            QueueSource::Local,
+            QueueSource::Radio,
+        ] {
+            assert!(!play_starts_radio(2, source, false), "{source:?}");
+            assert!(!play_starts_radio(25, source, false), "{source:?}");
+            assert!(!play_starts_radio(1, source, true), "{source:?}");
+        }
+        assert!(!play_starts_radio(1, QueueSource::Album, false));
     }
 }

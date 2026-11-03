@@ -109,7 +109,7 @@ pub fn show(
     ui.add_space(DP12);
 
     if let Some(entry) = state.confirm_remove.clone() {
-        let response = crate::widgets::modal(ui.ctx(), theme, "download_remove", |ui| {
+        let response = crate::widgets::modal(ui.ctx(), theme, "download_remove", 1.0, |ui| {
             ui.set_width(320.0);
             ui.label(
                 egui::RichText::new("Remove download?")

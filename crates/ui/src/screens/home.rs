@@ -4,12 +4,11 @@ use eframe::egui::{self, Ui, Vec2};
 use ml_core::{HomeFeed, QueueSource, Song};
 
 use crate::art::ArtCache;
+use crate::motion;
 use crate::routes::Route;
 use crate::services::Services;
 use crate::state::Load;
-use crate::theme::{
-    bold_font, regular_font, state_layer, Theme, DP12, DP16, DP24, DP4, DP48, DP8, GRID_GAP,
-};
+use crate::theme::{bold_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP48, DP8, GRID_GAP};
 use crate::widgets::{elided, empty_state, paint_icon, section_header};
 
 use super::{error_block, load_more, section_block, skeleton_cards, skeleton_rows, Intent};
@@ -116,11 +115,7 @@ pub fn show(
                     .filter_map(crate::state::item_song)
                     .collect();
                 if !songs.is_empty() {
-                    intents.push(Intent::Play {
-                        songs,
-                        index: 0,
-                        source,
-                    });
+                    intents.push(Intent::PlayAll { songs, source });
                 }
             }
         }
@@ -164,11 +159,7 @@ fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
             for (icon, title, subtitle, route) in chunk {
                 let (rect, response) =
                     ui.allocate_exact_size(Vec2::new(card_width, 80.0), egui::Sense::click());
-                let fill = state_layer(
-                    theme.scheme.surface_container_high,
-                    response.hovered(),
-                    response.is_pointer_button_down_on(),
-                );
+                let fill = motion::state_layer(ui, theme.scheme.surface_container_high, &response);
                 ui.painter().rect_filled(rect, 12, fill);
                 let icon_center = rect.left_top() + Vec2::new(28.0, 28.0);
                 ui.painter()

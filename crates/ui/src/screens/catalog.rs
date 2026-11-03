@@ -19,7 +19,9 @@ use crate::widgets::{
     SongRowOptions,
 };
 
-use super::{error_block, load_more, section_block, skeleton_cards, skeleton_rows, Intent};
+use super::{
+    artist_intent, error_block, load_more, section_block, skeleton_cards, skeleton_rows, Intent,
+};
 
 fn direct(intents: Vec<Intent>) -> Vec<Intent> {
     intents
@@ -374,6 +376,12 @@ fn episode_rows(
                 song: song.clone(),
                 action: response.download_action,
             });
+        } else if response
+            .artist
+            .as_ref()
+            .is_some_and(|artist| artist.clicked())
+        {
+            intents.extend(artist_intent(song));
         } else if response.row.clicked() {
             intents.push(Intent::PlayCatalog {
                 songs: songs.clone(),

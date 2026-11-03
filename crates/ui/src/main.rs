@@ -30,6 +30,8 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<RunOptions, String> 
         width: 1100,
         height: 760,
         demo: None,
+        pointer: None,
+        click: false,
     };
     while let Some(argument) = args.next() {
         match argument.as_str() {
@@ -65,6 +67,17 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<RunOptions, String> 
                 options.width = width;
                 options.height = height;
             }
+            "--pointer" => {
+                let mut coordinate = || {
+                    args.next()
+                        .and_then(|value| value.parse::<f32>().ok())
+                        .ok_or_else(|| "--pointer needs X Y".to_string())
+                };
+                let x = coordinate()?;
+                let y = coordinate()?;
+                options.pointer = Some((x, y));
+            }
+            "--click" => options.click = true,
             "--demo" => {
                 let value = args.next().ok_or_else(|| {
                     "--demo needs player|queue|lyrics|library|settings|settings-audio|history|liked|downloads|account|charts|moods|new-releases|podcasts|stats|wrapped|recognize|recognize-listening|recognize-success|recognize-error|integrations|integrations-connected|integrations-error|together|together-connected|together-guest"
@@ -91,7 +104,8 @@ Usage:
   metrolist
   metrolist --smoke [FRAMES]           # CI smoke test, default 120 frames
   metrolist --screenshot PATH [WIDTH] [HEIGHT]   # default 405x900
-  metrolist --screenshot PATH --demo player|queue|lyrics|library|settings|settings-audio|history|liked|downloads|account|charts|moods|new-releases|podcasts|stats|wrapped|recognize|recognize-listening|recognize-success|recognize-error|integrations|integrations-connected|integrations-error|together|together-connected|together-guest
+  metrolist --screenshot PATH --pointer X Y [--click]  # docs hover/click frames
+  metrolist --screenshot PATH --demo player|player-paused|queue|lyrics|library|settings|settings-audio|history|liked|downloads|account|charts|moods|new-releases|podcasts|stats|wrapped|recognize|recognize-listening|recognize-success|recognize-error|integrations|integrations-connected|integrations-error|together|together-connected|together-guest
   metrolist --demo together           # Listen Together lobby
   metrolist --demo player               # interactive sample playback
   metrolist --help

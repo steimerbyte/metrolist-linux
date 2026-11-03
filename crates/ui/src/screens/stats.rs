@@ -7,6 +7,7 @@ use ml_store::{
 };
 
 use crate::art::ArtCache;
+use crate::motion;
 use crate::pure::{
     listening_time_text, month_short, stats_period_label, stats_summary_cards, wrapped_summary,
 };
@@ -14,8 +15,7 @@ use crate::routes::Route;
 use crate::services::Services;
 use crate::state::{Load, StatsState};
 use crate::theme::{
-    bold_font, medium_font, regular_font, state_layer, Theme, DP12, DP16, DP24, DP4, DP8,
-    TITLE_LARGE,
+    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8, TITLE_LARGE,
 };
 use crate::widgets::{art_or_placeholder, empty_state, filled_button, section_header, text};
 
@@ -183,17 +183,18 @@ fn stat_song_row(
 ) -> bool {
     let active = current.is_some_and(|song| song.id == stat.song.id);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 64.0), egui::Sense::click());
-    if active || response.hovered() {
-        let fill = if active {
-            theme.scheme.secondary_container
-        } else {
-            state_layer(
-                theme.scheme.surface_container_high,
-                response.hovered(),
-                response.is_pointer_button_down_on(),
-            )
-        };
-        ui.painter().rect_filled(rect, 8, fill);
+    let active_t = motion::t(ui, response.id.with("active"), active, motion::HOVER);
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    if active_t >= 1.0 {
+        ui.painter()
+            .rect_filled(rect, 8, theme.scheme.secondary_container);
+    } else if active_t > 0.0 || hover_t > 0.0 || press_t > 0.0 {
+        let base = theme
+            .scheme
+            .surface_container_high
+            .lerp_to_gamma(theme.scheme.secondary_container, active_t);
+        ui.painter()
+            .rect_filled(rect, 8, motion::state_layer_at(base, hover_t, press_t));
     }
     let art_rect =
         egui::Rect::from_min_size(rect.left_top() + Vec2::new(30.0, 10.0), Vec2::splat(44.0));
@@ -266,13 +267,13 @@ fn stat_media_row(
     width: f32,
 ) -> bool {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 60.0), egui::Sense::click());
-    if response.hovered() {
-        let fill = state_layer(
-            theme.scheme.surface_container_high,
-            response.hovered(),
-            response.is_pointer_button_down_on(),
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    if hover_t > 0.0 || press_t > 0.0 {
+        ui.painter().rect_filled(
+            rect,
+            8,
+            motion::state_layer_at(theme.scheme.surface_container_high, hover_t, press_t),
         );
-        ui.painter().rect_filled(rect, 8, fill);
     }
     let art_rect =
         egui::Rect::from_min_size(rect.left_top() + Vec2::new(30.0, 8.0), Vec2::splat(44.0));

@@ -2,9 +2,10 @@
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, TextureHandle, Ui, Vec2};
 
+use crate::motion;
 use crate::routes::{Route, Tab};
 use crate::theme::{medium_font, regular_font, Theme, BODY_SMALL, DP20, DP4, DP8, TITLE_LARGE};
-use crate::widgets::{chip, icon_button_at, nav_item, paint_icon};
+use crate::widgets::{chip, icon_button_at, icon_button_at_swap, nav_item, paint_icon};
 use ml_core::Song;
 
 /// Right-hand action cluster of the top app bar: 40 dp history + sync + avatar
@@ -107,13 +108,24 @@ pub fn top_bar(
         5.0,
         Color32::from_rgb(0x7A, 0x8A, 0x9A),
     );
-    if avatar.hovered() {
+    let (avatar_hover, _) = motion::interaction(ui, &avatar);
+    if avatar_hover > 0.0 {
+        let outline = app_theme.scheme.outline;
         ui.painter().circle_stroke(
             avatar_center,
             16.0,
-            egui::Stroke::new(1.0, app_theme.scheme.outline),
+            egui::Stroke::new(
+                1.0,
+                egui::Color32::from_rgba_unmultiplied(
+                    outline.r(),
+                    outline.g(),
+                    outline.b(),
+                    (outline.a() as f32 * avatar_hover).round() as u8,
+                ),
+            ),
         );
     }
+    motion::focus_ring(ui, avatar_rect, 20, &avatar);
     avatar.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Account"));
 
     let sync = icon_button_at(
@@ -182,12 +194,16 @@ pub fn mini_player(
     playing: bool,
     texture: Option<&TextureHandle>,
     width: f32,
+    enter_t: f32,
 ) -> Option<MiniAction> {
     if width < 220.0 {
         return None;
     }
     let (outer, _) = ui.allocate_exact_size(Vec2::new(width, 64.0), Sense::hover());
-    let rect = outer.shrink2(Vec2::new(0.0, 2.0));
+    let action;
+    let previous_opacity = ui.opacity();
+    ui.set_opacity(previous_opacity * enter_t);
+    let rect = outer.shrink2(Vec2::new(0.0, 2.0 + 2.0 * (1.0 - enter_t)));
     ui.painter()
         .rect_filled(rect, 12, app_theme.scheme.surface_container);
 
@@ -242,12 +258,20 @@ pub fn mini_player(
         "Previous",
         22.0,
     );
-    let toggle = icon_button_at(
+    let mix = motion::t(
+        ui,
+        egui::Id::unique("mini_play_mix"),
+        playing,
+        motion::SELECT,
+    );
+    let toggle = icon_button_at_swap(
         ui,
         app_theme,
         "mini_toggle",
         Rect::from_center_size(Pos2::new(rect.right() - 70.0, center_y), Vec2::splat(44.0)),
-        if playing { "pause" } else { "play_arrow" },
+        "play_arrow",
+        "pause",
+        mix,
         if playing { "Pause" } else { "Play" },
         30.0,
     );
@@ -261,7 +285,7 @@ pub fn mini_player(
         22.0,
     );
 
-    if toggle.clicked() {
+    action = if toggle.clicked() {
         Some(MiniAction::TogglePlay)
     } else if previous.clicked() {
         Some(MiniAction::Previous)
@@ -271,7 +295,9 @@ pub fn mini_player(
         Some(MiniAction::OpenPlayer)
     } else {
         None
-    }
+    };
+    ui.set_opacity(previous_opacity);
+    action
 }
 
 /// 80 dp bottom navigation bar (compact window class).

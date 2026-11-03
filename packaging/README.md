@@ -30,6 +30,7 @@ packaging/
   Metrolist-Desktop.desktop      desktop entry
   build-appimage.sh              appimagetool + staged AppDir
   bundle-mpv.sh                  mpv + non-system libs under usr/lib/metrolist/mpv
+  check-icon.sh                  validate icon sizes, RGBA, transparent corners
   download-tools.sh              pinned appimagetool/runtime
   tools/                         downloaded on demand (run download-tools.sh)
   README.md
@@ -47,12 +48,16 @@ AppDir/
   usr/bin/mpv                -> ../lib/metrolist/mpv/mpv
   usr/lib/metrolist/mpv/     mpv + flattened ldd closure + PROVENANCE.txt
   usr/share/applications/Metrolist-Desktop.desktop
-  usr/share/icons/hicolor/{128,256,512}x.../apps/metrolist-desktop.png
+  usr/share/icons/hicolor/{16,32,48,64,128,256,512,1024}x.../apps/metrolist-desktop.png
   usr/share/metrolist/assets/fonts, icons, i18n/en.json
   usr/share/licenses/metrolist-desktop/{LICENSE,NOTICE,mpv/}
 ```
 
 Output: `dist/Metrolist-Desktop-<version>-x86_64.AppImage` plus `SHA256SUMS`.
+
+## Validation
+
+`packaging/check-icon.sh` validates the SVG master and all eight icon PNGs (dimensions, 8-bit RGBA, transparent corners, no external SVG references).
 
 ## Libraries: what not to bundle
 
@@ -108,7 +113,8 @@ is ISC; libplacebo is LGPL-2.1-or-later. Debian copyright files and
       --output assets/i18n
   ```
 
-- `assets/icons/`: 128/256/512 PNGs, original icon (not upstream artwork).
+- `assets/icons/`: original artwork, `metrolist-desktop.svg` master plus
+  16–1024 px PNGs (128/256/512 required for the desktop entry and tray).
 
 The binary may read assets from `$APPDIR/usr/share/metrolist/assets` via the
 `METROLIST_ASSETS` variable exported by `AppRun`, or embed them at compile time.

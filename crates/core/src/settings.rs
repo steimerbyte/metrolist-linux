@@ -113,6 +113,8 @@ pub struct Settings {
     pub sleep_timer_fade: bool,
     pub library_sort: LibrarySort,
     pub nav_style: NavStyle,
+    /// Collapse every animation to an instant state change.
+    pub reduce_motion: bool,
     pub hide_explicit: bool,
     pub hide_video_songs: bool,
 }
@@ -140,6 +142,7 @@ impl Default for Settings {
             sleep_timer_fade: true,
             library_sort: LibrarySort::RecentlyAdded,
             nav_style: NavStyle::Auto,
+            reduce_motion: false,
             hide_explicit: false,
             hide_video_songs: false,
         }

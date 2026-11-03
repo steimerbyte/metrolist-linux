@@ -4,7 +4,7 @@
 
 | file | sha256 (at freeze) |
 |------|--------------------|
-| crates/ui/src/pure.rs | 5daac36cdc6ccdb88a69951214492239d18256bf8a854591c356b17cfd2b8b92 |
+| crates/ui/src/pure.rs | 692cda7eb457cc27199d30e075d99c8d5c007ac6b4d112fe571e468f07bd2972 |
 | crates/downloads/src/model.rs | 73e3b75407ab16e97435933955a007571a830a0ec415095534110b4eeff3b648 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
@@ -15,12 +15,12 @@ Lynette gate: `ed5855fb68c18a77a5ec0c98512497c5ef4e7d59`.
 
 `crates/ui/src/pure.rs` declares its helpers as "deterministic, total and
 panic-free so the proof lead can freeze them into Verus spec/exec pairs". This
-pair proves the integer/byte-shaped ones. It does **not** cover the file: 26
-exec functions are in the pair — 17 core functions plus nine transcription
+pair proves the integer/byte-shaped ones. It does **not** cover the file: 28
+exec functions are in the pair — 19 core functions plus nine transcription
 helpers — and everything else is listed under "Not covered (full inventory)"
 below and is *not* claimed.
 
-Proven (17 core functions + 9 transcription helpers):
+Proven (19 core functions + 9 transcription helpers):
 
 1. `session_file_path`
 2. `queue_index_for_id`
@@ -108,6 +108,16 @@ Proven (17 core functions + 9 transcription helpers):
   The icon table is modelled as opaque symbol ids (`1..=6`, one per row, in the
   real order); the click table is the real enum. `download_hint` has the same
   shape as `download_icon` and is **not** transcribed.
+- **`play_starts_radio(&QueueSource)` (v0.1.3)**: the source tests
+  `source == QueueSource::List`. Verus leaves the derived `PartialEq` opaque,
+  so the exec body tests the fieldless enum by variant
+  (`match source { List => true, _ => false }`), which is the same decision;
+  the spec keeps the source's `==`. `QueueSource` is transcribed with all six
+  variants so the test keeps its real domain.
+- **`PlaylistOrder::sort_mode` (v0.1.3)**: `SortMode` and `PlaylistOrder` are
+  reduced to their variants; `#[derive(Default)]` is not modelled (the defaults
+  are source text, pinned by the unit tests). `SortMode::label` /
+  `PlaylistOrder::label` return `&'static str` and are not transcribed.
 
 ## Proven
 
@@ -175,6 +185,17 @@ Proven (17 core functions + 9 transcription helpers):
   therefore kept verbatim. `PathBuf::from` of the plain text is the byte copy.
   Windows separators and non-UTF-8 `OsStr` are out of subset.
 
+- **`play_starts_radio(usize, QueueSource, bool) -> bool` (v0.1.3)** — the
+  contract is the source predicate exactly (`play_starts_radio_spec`:
+  `!play_all && song_count == 1 && source == List`), plus `r ⇒ one song`,
+  `r ⇒ List`, `play_all ⇒ !r` and `0 songs ⇒ !r`. The three rule lemmas are
+  `lemma_play_all_is_never_radio`, `lemma_radio_needs_exactly_one` and
+  `lemma_radio_needs_list`.
+- **`PlaylistOrder::sort_mode(PlaylistOrder) -> Option<SortMode>` (v0.1.3)** —
+  the enum table as `sort_mode_spec`; `lemma_default_only_none` states
+  `Default` ⇔ `None`, and `lemma_album_unreachable` states that a playlist
+  order never selects `SortMode::Album`.
+
 ## Not covered (full inventory)
 
 Every public/total helper of `pure.rs` that this pair does **not** prove, and
@@ -195,6 +216,10 @@ why — none of these is claimed as verified anywhere:
 | `account_error_message` | OUT-OF-SUBSET | `String` + payload matching; only its arm selection could be modelled |
 | `valid_search_query`, `sanitize_proxy_url`, `parse_deep_link`, `first_deep_link`, `sanitize_video_id` | OUT-OF-SUBSET | `&str` `trim`/`strip_prefix`/`chars` scanning |
 | `parse_persisted_queue` | OUT-OF-SUBSET | `serde_json` + `HashSet` |
+| `progress_fraction`, `fraction_at`, `smooth_progress`, `progress_pulse` (v0.1.3) | OUT-OF-SUBSET | `f32`/`f64` division, NaN/∞ checks, `clamp`, `sin`, `exp`; the `0.0..=1.0` postconditions in their doc comments are **unproven** (same float policy) |
+| `sort_songs`, `playlist_songs`, `sort_albums`, `sort_artists`, `sort_playlists` (v0.1.3) | OUT-OF-SUBSET | `Vec<Song/Album/ArtistItem/PlaylistRecord>` with `String` keys, `sort_by_cached_key` (stable std sort), `to_lowercase`; no vstd string-order or stable-sort model |
+| `SortMode::label`, `PlaylistOrder::label` (v0.1.3) | CANDIDATE | enum → `&'static str` literal table, no arithmetic; pinned by the unit tests (same policy as `download_hint`) |
+| `SortMode::ALL`, `PlaylistOrder::ALL` (v0.1.3) | n/a | associated consts, not functions; the tests only check `len() == 5`, so distinctness/completeness is unproven |
 | `samples_and_offset`-style helpers elsewhere in `pure.rs` | n/a | not present in this file |
 
 ## Re-freeze note (2026-11-02, release freeze)
@@ -240,3 +265,31 @@ The other proven functions of this pair were re-read at the new revision and
 are byte-identical apart from the additive `expand_import_path` block and the
 vinyl helpers from v0.1.1; `crates/downloads/src/model.rs` is unchanged
 (`73e3b754…`).
+
+## Re-freeze 2026-11-03 v0.1.3 (UI tranche: radio decision, display sort)
+
+`crates/ui/src/pure.rs` gained the play decision (`play_starts_radio`), the
+display-sort types and helpers (`SortMode`, `PlaylistOrder`, `sort_songs`,
+`playlist_songs`, `sort_albums`, `sort_artists`, `sort_playlists`) and four
+progress helpers (`progress_fraction`, `fraction_at`, `smooth_progress`,
+`progress_pulse`); the new hash is in the table above (`692cda7e…`). The delta
+is additive: every previously proven function was re-read at the new revision
+and is byte-identical, and the nine transcription helpers are unchanged.
+`crates/downloads/src/model.rs` is unchanged (`73e3b754…`), so
+`progress_percent` is untouched.
+
+Two new exec functions are proven; everything else is inventoried above:
+
+- `play_starts_radio` — six-variant `QueueSource`, the exact source predicate
+  and the three rule lemmas (§Proven).
+- `PlaylistOrder::sort_mode` — `Default` ⇔ `None`, `Album` unreachable.
+
+`candidate.rs` verifies **84 functions, 0 errors** (was 77). `original.rs` is
+regenerated by `derive_original.py` (script unchanged) and has 28 verified / 20
+expected scaffold errors, no resolution errors. The pair now carries 28 exec
+functions — 19 core plus the 9 transcription helpers.
+
+`crates/ui/src/app.rs` changed in the same tranche but is owned by
+`proofs/radio`; this pair proves nothing in that file. `screens/search.rs`
+(`pill_geometry`) and `motion.rs` were not added to the proof sources: floats
+and egui only.

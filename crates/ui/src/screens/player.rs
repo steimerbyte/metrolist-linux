@@ -4,17 +4,21 @@ use eframe::egui::{
     self, Align, Color32, Layout, Pos2, Rect, Sense, TextureHandle, Ui, Vec2, WidgetInfo,
 };
 
+use crate::motion;
 use crate::pure::advance_vinyl_angle;
-use crate::theme::{bold_font, medium_font, regular_font, Theme, DP12, DP16, DP4, DP8, TOUCH};
+use crate::theme::{
+    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8, TOUCH,
+};
 use crate::widgets::{
-    filled_icon_button, icon_button, icon_button_at, paint_icon, slider, text_width, vinyl_disc,
+    filled_icon_button_swap, icon_button, icon_button_at, paint_icon, progress_slider, slider,
+    text_width, vinyl_disc,
 };
 use ml_core::{format_position, PlaybackStatus, RepeatMode, Song};
 
 /// Volume slider width; mute button (40) + 12 dp gap + slider = 202 dp row.
 const VOLUME_SLIDER: f32 = 150.0;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PlayerAction {
     None,
     TogglePlay,
@@ -29,6 +33,8 @@ pub enum PlayerAction {
     ToggleLibrary,
     ToggleMute,
     SetVolume(f32),
+    StartRadio,
+    OpenArtist(String),
     Close,
 }
 
@@ -46,6 +52,8 @@ pub struct PlayerView<'a> {
     pub in_library: bool,
     pub muted: bool,
     pub offline: bool,
+    /// The installed queue came from a radio (`QueueSource::Radio`).
+    pub radio_active: bool,
 }
 
 /// Full-window backdrop derived from the cover (or a scheme gradient).
@@ -191,7 +199,8 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         .min(380.0)
         .min((available_height * 0.48).max(140.0))
         .max(120.0);
-    let spinning = view.playing && view.status == PlaybackStatus::Playing;
+    let spinning =
+        view.playing && view.status == PlaybackStatus::Playing && !motion::reduced(ui.ctx());
     let dt = ui.input(|input| input.stable_dt);
     let vinyl_angle = ui.data_mut(|data| {
         let state = data.get_temp_mut_or_insert_with::<VinylState>(
@@ -222,18 +231,10 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
             .truncate(),
         );
         ui.add_space(DP4);
-        let mut byline = song.artist_names();
-        if view.offline {
-            byline.push_str(" · Offline");
+        let byline_action = artist_label(ui, app_theme, song, view.offline);
+        if byline_action != PlayerAction::None {
+            action = byline_action;
         }
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(byline)
-                    .font(regular_font(14.0))
-                    .color(app_theme.scheme.on_surface_variant),
-            )
-            .truncate(),
-        );
         if let Some(album) = &song.album {
             ui.add_space(DP4);
             ui.add(
@@ -245,25 +246,25 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
                 .truncate(),
             );
         }
-        ui.add_space(DP12);
-
+        // Clearance for the hover time bubble above the timeline, which
+        // otherwise overlaps the artist byline on the compact layout.
+        ui.add_space(DP24);
         let slider_width = (width - 48.0).min(460.0);
-        let mut progress = if view.duration_ms > 0 {
-            (view.position_ms as f32 / view.duration_ms as f32).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let seek = slider(
+        let buffering = matches!(
+            view.status,
+            PlaybackStatus::Loading | PlaybackStatus::Buffering
+        );
+        let seek = progress_slider(
             ui,
             app_theme,
-            &mut progress,
-            0.0..=1.0,
+            view.position_ms,
+            view.duration_ms,
+            buffering,
             slider_width,
-            "Seek",
-        )
-        .on_hover_text("Seek (←/→ 5 s)");
-        if seek.changed() {
-            action = PlayerAction::Seek(crate::pure::seek_target(progress, view.duration_ms));
+        );
+        seek.response.on_hover_text("Seek (←/→ 5 s)");
+        if let Some(target) = seek.seek {
+            action = PlayerAction::Seek(target);
         }
         ui.allocate_ui_with_layout(
             Vec2::new(slider_width, 18.0),
@@ -285,88 +286,10 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         );
         ui.add_space(DP8);
 
-        // Six equal icon slots surround the wider play button. The slot width
-        // is derived from the available width, capped to keep the cluster tight
-        // on wide windows. The fixed 64 dp row height is what keeps the 40 dp
-        // icons vertically centred once the play button expands the row.
-        let (leading, slot) = transport_geometry(width);
-        ui.allocate_ui_with_layout(
-            Vec2::new(width, 64.0),
-            Layout::left_to_right(Align::Center),
-            |ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.add_space(leading);
-                let like =
-                    transport_slot(ui, slot, TOUCH, |ui| like_button(ui, app_theme, view.liked));
-                if like.clicked() {
-                    action = PlayerAction::ToggleLike;
-                }
-                let shuffle = transport_slot(ui, slot, TOUCH, |ui| {
-                    icon_button(ui, app_theme, "shuffle", "Shuffle", 22.0)
-                        .on_hover_text("Shuffle (S)")
-                });
-                if view.shuffle {
-                    ui.painter().circle_filled(
-                        Pos2::new(shuffle.rect.center().x, shuffle.rect.bottom() - 2.0),
-                        2.0,
-                        app_theme.scheme.primary,
-                    );
-                }
-                if shuffle.clicked() {
-                    action = PlayerAction::ToggleShuffle;
-                }
-                let previous = transport_slot(ui, slot, TOUCH, |ui| {
-                    icon_button(ui, app_theme, "skip_previous", "Previous", 26.0)
-                        .on_hover_text("Previous")
-                });
-                if previous.clicked() {
-                    action = PlayerAction::Previous;
-                }
-                let toggle = transport_slot(ui, 64.0, 64.0, |ui| {
-                    filled_icon_button(
-                        ui,
-                        app_theme,
-                        if view.playing { "pause" } else { "play_arrow" },
-                        if view.playing { "Pause" } else { "Play" },
-                        64.0,
-                    )
-                    .on_hover_text("Play/Pause (Space)")
-                });
-                if toggle.clicked() {
-                    action = PlayerAction::TogglePlay;
-                }
-                let next = transport_slot(ui, slot, TOUCH, |ui| {
-                    icon_button(ui, app_theme, "skip_next", "Next", 26.0).on_hover_text("Next")
-                });
-                if next.clicked() {
-                    action = PlayerAction::Next;
-                }
-                let repeat_icon = if view.repeat == RepeatMode::One {
-                    "repeat_one"
-                } else {
-                    "repeat"
-                };
-                let repeat_label = match view.repeat {
-                    RepeatMode::Off => "Repeat off",
-                    RepeatMode::All => "Repeat all",
-                    RepeatMode::One => "Repeat one",
-                };
-                let repeat = transport_slot(ui, slot, TOUCH, |ui| {
-                    icon_button(ui, app_theme, repeat_icon, repeat_label, 22.0)
-                        .on_hover_text("Repeat (R)")
-                });
-                if view.repeat != RepeatMode::Off {
-                    ui.painter().circle_filled(
-                        Pos2::new(repeat.rect.center().x, repeat.rect.bottom() - 2.0),
-                        2.0,
-                        app_theme.scheme.primary,
-                    );
-                }
-                if repeat.clicked() {
-                    action = PlayerAction::CycleRepeat;
-                }
-            },
-        );
+        let next = transport(ui, app_theme, view, width);
+        if next != PlayerAction::None {
+            action = next;
+        }
 
         let status = match view.status {
             PlaybackStatus::Loading => Some("Loading stream…"),
@@ -422,6 +345,158 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
     action
 }
 
+/// Artist byline under the title. Returns `OpenArtist` when the first artist
+/// carries an id and its text is clicked; a missing id stays plain text.
+fn artist_label(ui: &mut Ui, app_theme: &Theme, song: &Song, offline: bool) -> PlayerAction {
+    let mut byline = song.artist_names();
+    if offline {
+        byline.push_str(" · Offline");
+    }
+    let linked_artist = song
+        .artists
+        .iter()
+        .find(|artist| artist.id.as_deref().is_some_and(|id| !id.is_empty()));
+    let Some(artist) = linked_artist else {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(byline)
+                    .font(regular_font(14.0))
+                    .color(app_theme.scheme.on_surface_variant),
+            )
+            .truncate(),
+        );
+        return PlayerAction::None;
+    };
+    let response = ui.add(
+        egui::Label::new(
+            egui::RichText::new(byline)
+                .font(regular_font(14.0))
+                .color(app_theme.scheme.on_surface_variant),
+        )
+        .truncate()
+        .sense(Sense::click()),
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response.widget_info(|| {
+        WidgetInfo::labeled(
+            egui::Role::Button,
+            true,
+            format!("Open artist {}", artist.name),
+        )
+    });
+    if response.clicked() {
+        artist
+            .id
+            .clone()
+            .map(PlayerAction::OpenArtist)
+            .unwrap_or(PlayerAction::None)
+    } else {
+        PlayerAction::None
+    }
+}
+
+fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -> PlayerAction {
+    let mut action = PlayerAction::None;
+    let (leading, slot) = transport_geometry(width);
+    ui.allocate_ui_with_layout(
+        Vec2::new(width, 64.0),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(leading);
+            let like = transport_slot(ui, slot, TOUCH, |ui| like_button(ui, app_theme, view.liked));
+            if like.clicked() {
+                action = PlayerAction::ToggleLike;
+            }
+            let shuffle = transport_slot(ui, slot, TOUCH, |ui| {
+                icon_button(ui, app_theme, "shuffle", "Shuffle", 22.0).on_hover_text("Shuffle (S)")
+            });
+            if view.shuffle {
+                active_dot(ui, app_theme, &shuffle);
+            }
+            if shuffle.clicked() {
+                action = PlayerAction::ToggleShuffle;
+            }
+            let previous = transport_slot(ui, slot, TOUCH, |ui| {
+                icon_button(ui, app_theme, "skip_previous", "Previous", 26.0)
+                    .on_hover_text("Previous")
+            });
+            if previous.clicked() {
+                action = PlayerAction::Previous;
+            }
+            let play_mix = motion::t(
+                ui,
+                egui::Id::unique("player_play_mix"),
+                view.playing,
+                motion::SELECT,
+            );
+            let toggle = transport_slot(ui, 64.0, 64.0, |ui| {
+                filled_icon_button_swap(
+                    ui,
+                    app_theme,
+                    "play_arrow",
+                    "pause",
+                    play_mix,
+                    "Play/Pause",
+                    64.0,
+                )
+                .on_hover_text("Play/Pause (Space)")
+            });
+            if toggle.clicked() {
+                action = PlayerAction::TogglePlay;
+            }
+            let next = transport_slot(ui, slot, TOUCH, |ui| {
+                icon_button(ui, app_theme, "skip_next", "Next", 26.0).on_hover_text("Next")
+            });
+            if next.clicked() {
+                action = PlayerAction::Next;
+            }
+            let repeat_icon = if view.repeat == RepeatMode::One {
+                "repeat_one"
+            } else {
+                "repeat"
+            };
+            let repeat_label = match view.repeat {
+                RepeatMode::Off => "Repeat off",
+                RepeatMode::All => "Repeat all",
+                RepeatMode::One => "Repeat one",
+            };
+            let repeat = transport_slot(ui, slot, TOUCH, |ui| {
+                icon_button(ui, app_theme, repeat_icon, repeat_label, 22.0)
+                    .on_hover_text("Repeat (R)")
+            });
+            if view.repeat != RepeatMode::Off {
+                active_dot(ui, app_theme, &repeat);
+            }
+            if repeat.clicked() {
+                action = PlayerAction::CycleRepeat;
+            }
+            let radio = transport_slot(ui, slot, TOUCH, |ui| {
+                icon_button(ui, app_theme, "radio", "Start radio", 22.0)
+                    .on_hover_text("Start radio")
+            });
+            if view.radio_active {
+                active_dot(ui, app_theme, &radio);
+            }
+            if radio.clicked() {
+                action = PlayerAction::StartRadio;
+            }
+        },
+    );
+    action
+}
+
+/// Small primary dot under an active transport toggle.
+fn active_dot(ui: &Ui, app_theme: &Theme, response: &egui::Response) {
+    ui.painter().circle_filled(
+        Pos2::new(response.rect.center().x, response.rect.bottom() - 2.0),
+        2.0,
+        app_theme.scheme.primary,
+    );
+}
+
 /// Leading margin and icon-slot width for the transport row. The six icon
 /// slots plus the 64 dp play cell are centred, so the play button always lands
 /// on the art's centre line without absolute button positions.
@@ -439,34 +514,42 @@ fn transport_slot<R>(
     content_width: f32,
     add: impl FnOnce(&mut Ui) -> R,
 ) -> R {
-    ui.allocate_ui_with_layout(
-        Vec2::new(slot_width, 64.0),
-        Layout::left_to_right(Align::Center),
-        |ui| {
-            ui.add_space(((slot_width - content_width) * 0.5).max(0.0));
-            add(ui)
-        },
-    )
-    .inner
+    // Allocate the slot on the row itself: `allocate_ui_with_layout` advances
+    // by the child's min width, so six slightly narrower icon cells would
+    // pull the 64 dp play cell left of the content centre.
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(slot_width, 64.0), Sense::hover());
+    let mut slot = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    slot.add_space(((slot_width - content_width) * 0.5).max(0.0));
+    add(&mut slot)
 }
 
 fn like_button(ui: &mut Ui, app_theme: &Theme, liked: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(TOUCH), Sense::click());
-    if response.hovered() {
-        ui.painter()
-            .circle_filled(rect.center(), 18.0, app_theme.scheme.surface_container_high);
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    if hover_t > 0.0 || press_t > 0.0 {
+        let scale = motion::press_scale_at(press_t);
+        ui.painter().circle_filled(
+            rect.center(),
+            18.0 * scale,
+            motion::state_layer_at(app_theme.scheme.surface_container_high, hover_t, press_t),
+        );
     }
     paint_icon(
         ui.painter(),
         rect.center(),
         "favorite",
-        22.0,
+        22.0 * motion::press_scale_at(press_t),
         if liked {
             app_theme.scheme.primary
         } else {
             app_theme.scheme.on_surface_variant
         },
     );
+    motion::focus_ring(ui, rect, 20, &response);
     response
         .widget_info(|| WidgetInfo::selected(egui::Role::Button, true, liked, "Like this song"));
     response
@@ -502,7 +585,7 @@ mod tests {
     use super::*;
     use crate::pure::{wrap_vinyl_angle, VINYL_RADIANS_PER_SEC};
     use crate::theme::Theme as TestTheme;
-    use eframe::egui::{CentralPanel, Context, RawInput, Shape};
+    use eframe::egui::{CentralPanel, Context, Event, Modifiers, PointerButton, RawInput, Shape};
     use ml_core::Settings;
 
     #[test]
@@ -591,18 +674,234 @@ mod tests {
         );
     }
 
+    fn test_view(song: &Song) -> PlayerView<'_> {
+        PlayerView {
+            song: Some(song),
+            playing: true,
+            status: PlaybackStatus::Playing,
+            position_ms: 30_000,
+            duration_ms: 120_000,
+            shuffle: false,
+            repeat: RepeatMode::Off,
+            texture: None,
+            volume: 0.7,
+            liked: false,
+            in_library: false,
+            muted: false,
+            offline: false,
+            radio_active: false,
+        }
+    }
+
+    fn test_song() -> Song {
+        Song {
+            id: "song".into(),
+            title: "Song".into(),
+            artists: vec![ml_core::Artist::new("LONOWN", Some("UCartist".into()))],
+            duration: Some(120),
+            ..Song::default()
+        }
+    }
+
+    fn clickable_frame(
+        ctx: &Context,
+        width: f32,
+        height: f32,
+        events: Vec<Event>,
+        mut draw: impl FnMut(&mut Ui) -> PlayerAction,
+    ) -> (PlayerAction, eframe::egui::FullOutput) {
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height))),
+            events,
+            ..RawInput::default()
+        };
+        let mut action = PlayerAction::None;
+        let mut output = ctx.run_ui(input, |ctx| {
+            CentralPanel::default().show(ctx, |ui| {
+                action = draw(ui);
+            });
+        });
+        output.textures_delta.clear();
+        (action, output)
+    }
+
+    fn press_release(pos: Pos2) -> [Vec<Event>; 3] {
+        [
+            vec![Event::PointerMoved(pos)],
+            vec![
+                Event::PointerMoved(pos),
+                Event::PointerButton {
+                    pos,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::default(),
+                },
+            ],
+            vec![
+                Event::PointerMoved(pos),
+                Event::PointerButton {
+                    pos,
+                    button: PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Modifiers::default(),
+                },
+            ],
+        ]
+    }
+
     #[test]
     fn transport_slots_keep_play_centred_at_every_width() {
         for width in [320.0, 373.0, 405.0, 560.0, 1100.0] {
             let (leading, slot) = transport_geometry(width);
             assert!(leading >= 0.0);
-            assert!(slot >= TOUCH, "slot {slot} too narrow at {width}");
+            assert!(
+                (slot * 6.0 + 64.0 - width.min(360.0)).abs() < 0.01,
+                "seven transport cells fill the row at {width}"
+            );
+            assert!(slot >= TOUCH, "slot {slot} below touch at {width}");
             let play_center = leading + slot * 3.0 + 32.0;
             assert!(
                 (play_center - width * 0.5).abs() < 0.01,
                 "play centre {play_center} != {} at {width}",
                 width * 0.5
             );
+        }
+    }
+
+    #[test]
+    fn rendered_play_button_stays_on_the_content_centre_line() {
+        let theme = TestTheme::from_settings(&Settings::default());
+        let song = test_song();
+        let view = test_view(&song);
+        for (screen_width, width) in [(405.0, 357.0), (600.0, 560.0), (440.0, 400.0)] {
+            let ctx = Context::default();
+            let mut play_hits = Vec::new();
+            let mut row_center = 0.0;
+            for x in (0..=(width as i32 + 32)).step_by(2) {
+                let pos = Pos2::new(x as f32, 48.0);
+                let mut last = PlayerAction::None;
+                for events in press_release(pos) {
+                    let (action, _) = clickable_frame(&ctx, screen_width, 200.0, events, |ui| {
+                        ui.add_space(8.0);
+                        let (rect, _) =
+                            ui.allocate_exact_size(Vec2::new(width, 64.0), Sense::hover());
+                        row_center = rect.center().x;
+                        let mut row = ui.new_child(
+                            egui::UiBuilder::new()
+                                .max_rect(rect)
+                                .layout(Layout::left_to_right(Align::Center)),
+                        );
+                        transport(&mut row, &theme, &view, width)
+                    });
+                    last = action;
+                }
+                if last == PlayerAction::TogglePlay {
+                    play_hits.push(x as f32);
+                }
+            }
+            assert!(!play_hits.is_empty(), "play button not hit at {width}");
+            let measured = (play_hits.first().unwrap() + play_hits.last().unwrap()) / 2.0;
+            assert!(
+                (measured - row_center).abs() <= 2.0,
+                "rendered play centre {measured} != row centre {row_center} at width {width}"
+            );
+        }
+    }
+
+    #[test]
+    fn radio_button_sits_right_of_repeat_and_reports_active_state() {
+        let theme = TestTheme::from_settings(&Settings::default());
+        let width = 357.0;
+        let (_, slot) = transport_geometry(width);
+        assert!(slot >= TOUCH, "405-wide player keeps 40 dp icon slots");
+        let song = test_song();
+        let mut view = test_view(&song);
+
+        let mut repeat_hits = Vec::new();
+        let mut radio_hits = Vec::new();
+        for x in (8..400).step_by(4) {
+            let ctx = Context::default();
+            let pos = Pos2::new(x as f32, 40.0);
+            let mut last = PlayerAction::None;
+            for events in press_release(pos) {
+                let (action, _) = clickable_frame(&ctx, 405.0, 200.0, events, |ui| {
+                    transport(ui, &theme, &view, width)
+                });
+                last = action;
+            }
+            match last {
+                PlayerAction::CycleRepeat => repeat_hits.push(x),
+                PlayerAction::StartRadio => radio_hits.push(x),
+                _ => {}
+            }
+        }
+        assert!(!repeat_hits.is_empty(), "repeat must be clickable");
+        assert!(!radio_hits.is_empty(), "radio must be clickable");
+        assert!(
+            radio_hits[0] > *repeat_hits.last().unwrap(),
+            "radio sits immediately right of repeat: {repeat_hits:?} / {radio_hits:?}"
+        );
+
+        view.radio_active = true;
+        let ctx = Context::default();
+        let (_, output) = clickable_frame(&ctx, 405.0, 200.0, Vec::new(), |ui| {
+            transport(ui, &theme, &view, width)
+        });
+        let dots: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                Shape::Circle(circle) if (circle.radius - 2.0).abs() < 0.01 => {
+                    Some(circle.center.x)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dots.len(), 1, "only the radio active dot is drawn");
+        assert!(
+            dots[0] >= radio_hits[0] as f32 - 2.0
+                && dots[0] <= *radio_hits.last().unwrap() as f32 + 2.0,
+            "active dot {:?} under the radio hit area {radio_hits:?}",
+            dots[0]
+        );
+
+        view.radio_active = false;
+        let ctx = Context::default();
+        let (_, output) = clickable_frame(&ctx, 405.0, 200.0, Vec::new(), |ui| {
+            transport(ui, &theme, &view, width)
+        });
+        assert!(
+            !output.shapes.iter().any(|clipped| matches!(
+                &clipped.shape,
+                Shape::Circle(circle) if (circle.radius - 2.0).abs() < 0.01
+            )),
+            "no active dot without a radio queue"
+        );
+    }
+
+    #[test]
+    fn artist_byline_opens_the_first_artist_with_an_id() {
+        let theme = TestTheme::from_settings(&Settings::default());
+        let song = test_song();
+        let click = Pos2::new(24.0, 16.0);
+        let ctx = Context::default();
+        let mut action = PlayerAction::None;
+        for events in press_release(click) {
+            let (next, _) = clickable_frame(&ctx, 405.0, 120.0, events, |ui| {
+                artist_label(ui, &theme, &song, false)
+            });
+            action = next;
+        }
+        assert_eq!(action, PlayerAction::OpenArtist("UCartist".into()));
+
+        let mut plain = song.clone();
+        plain.artists = vec![ml_core::Artist::new("LONOWN", None)];
+        let ctx = Context::default();
+        for events in press_release(click) {
+            let (next, _) = clickable_frame(&ctx, 405.0, 120.0, events, |ui| {
+                artist_label(ui, &theme, &plain, false)
+            });
+            assert_eq!(next, PlayerAction::None);
         }
     }
 }

@@ -3,9 +3,11 @@
 use eframe::egui::{self, Ui, Vec2};
 use ml_core::{format_duration_opt, QueueSource};
 
+use crate::pure::playlist_songs;
+
 use crate::art::ArtCache;
 use crate::services::Services;
-use crate::state::{Load, PageData};
+use crate::state::{PageData, PageState};
 use crate::theme::{
     bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8, TITLE_LARGE, TOUCH,
 };
@@ -14,28 +16,29 @@ use crate::widgets::{
     outlined_button_width, section_header,
 };
 
-use super::{error_block, load_more, section_block, skeleton_rows, song_list, Intent};
+use super::{error_block, load_more, section_block, skeleton_rows, song_list, sort_menu, Intent};
 
 pub fn show(
     ui: &mut Ui,
     theme: &Theme,
     services: &Services,
     art: &mut ArtCache,
-    page: &Load<PageData>,
+    page: &mut PageState,
     current: Option<&ml_core::Song>,
     width: f32,
 ) -> Vec<Intent> {
     let mut intents = Vec::new();
+    let mut playlist_order = page.sort;
 
-    if page.initial_loading() {
+    if page.data.initial_loading() {
         crate::widgets::shimmer(ui, theme, Vec2::new(160.0, 160.0), 8);
         ui.add_space(DP12);
         skeleton_rows(ui, theme, width);
         ui.add_space(DP24);
         return intents;
     }
-    let Some(data) = page.loaded() else {
-        if let Some(error) = &page.error {
+    let Some(data) = page.data.loaded() else {
+        if let Some(error) = &page.data.error {
             if error_block(ui, theme, error) {
                 intents.push(Intent::Refresh);
             }
@@ -88,7 +91,7 @@ pub fn show(
                 QueueSource::Album,
             ));
             if album_page.continuation.is_some() {
-                if load_more(ui, theme, page.more_loading) {
+                if load_more(ui, theme, page.data.more_loading) {
                     intents.push(Intent::LoadMore);
                 }
             }
@@ -122,23 +125,31 @@ pub fn show(
                 }
             }
             ui.add_space(DP8);
-            intents.extend(actions_into(
-                actions,
-                &playlist_page.songs,
-                QueueSource::Playlist,
-            ));
+            // Display-only reorder: Play/Shuffle and row indices all use this
+            // copy, never the stored playlist.
+            let songs = playlist_songs(&playlist_page.songs, playlist_order);
+            intents.extend(actions_into(actions, &songs, QueueSource::Playlist));
+            sort_menu(
+                ui,
+                theme,
+                &crate::pure::PlaylistOrder::ALL,
+                &mut playlist_order,
+                crate::pure::PlaylistOrder::label,
+            );
+            ui.add_space(DP4);
             intents.extend(song_list(
                 ui,
                 theme,
                 services,
                 art,
-                &playlist_page.songs,
+                &songs,
                 current,
                 width,
                 QueueSource::Playlist,
             ));
+            page.sort = playlist_order;
             if playlist_page.continuation.is_some() {
-                if load_more(ui, theme, page.more_loading) {
+                if load_more(ui, theme, page.data.more_loading) {
                     intents.push(Intent::LoadMore);
                 }
             }
@@ -198,7 +209,7 @@ pub fn show(
                     QueueSource::Artist,
                 ));
             }
-            if artist_page.continuation.is_some() && load_more(ui, theme, page.more_loading) {
+            if artist_page.continuation.is_some() && load_more(ui, theme, page.data.more_loading) {
                 intents.push(Intent::LoadMore);
             }
         }
@@ -372,9 +383,8 @@ fn actions_into(
     if download && !songs.is_empty() {
         intents.push(Intent::DownloadAll(songs.to_vec()));
     } else if play && !songs.is_empty() {
-        intents.push(Intent::Play {
+        intents.push(Intent::PlayAll {
             songs: songs.to_vec(),
-            index: 0,
             source,
         });
     } else if shuffle && !songs.is_empty() {

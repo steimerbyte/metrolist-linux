@@ -56,6 +56,34 @@ pub fn paint_icon(painter: &egui::Painter, center: Pos2, name: &str, size: f32, 
     painter.galley(center - galley.size() / 2.0, galley, color);
 }
 
+/// Crossfade two ligature glyphs; `from` fades out, `to` fades in slightly
+/// scaled, so a play/pause swap reads as a morph rather than a hard cut.
+pub fn paint_icon_swap(
+    painter: &egui::Painter,
+    center: Pos2,
+    from: &str,
+    to: &str,
+    mix: f32,
+    size: f32,
+    color: Color32,
+) {
+    let mix = mix.clamp(0.0, 1.0);
+    let alpha = |factor: f32| {
+        Color32::from_rgba_unmultiplied(
+            color.r(),
+            color.g(),
+            color.b(),
+            (color.a() as f32 * factor).round() as u8,
+        )
+    };
+    if mix < 1.0 {
+        paint_icon(painter, center, from, size, alpha(1.0 - mix));
+    }
+    if mix > 0.0 {
+        paint_icon(painter, center, to, size * (0.9 + 0.1 * mix), alpha(mix));
+    }
+}
+
 /// UV rect that fills `target` from a `source` texture with a centre crop.
 ///
 /// ytimg 4:3 thumbnails (`hqdefault`, `default`) carry 12.5 % black bars above

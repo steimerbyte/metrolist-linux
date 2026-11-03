@@ -5,8 +5,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui::{
-    self, Align, CentralPanel, Context, Frame, Key, Layout, Panel, ScrollArea, Ui, Vec2,
+    self, Align, CentralPanel, Context, Frame, Key, LayerId, Layout, Panel, ScrollArea, Ui, Vec2,
 };
+use eframe::emath::TSTransform;
 use ml_core::{
     AppEvent, HomeFeed, LyricsDocument, PlaybackStatus, PlayerSnapshot, QueueSource, Song,
 };
@@ -16,6 +17,7 @@ use ml_innertube::parse::url::{parse_url, ParsedUrl};
 use crate::art::ArtCache;
 use crate::desktop::{self, Desktop, DesktopEvent};
 use crate::integrations::{self, DiscordStatus, LastFmStatus, LastFmUiState};
+use crate::motion;
 use crate::pure;
 use crate::routes::{Route, Tab};
 use crate::screens::settings::{SettingsAction, SettingsStatus};
@@ -74,6 +76,10 @@ pub struct App {
     art: ArtCache,
     route: Route,
     back: Vec<Route>,
+    /// Route-enter animation: route it belongs to, start time, signed start offset.
+    enter_route: Route,
+    enter_start: f64,
+    enter_from_x: f32,
     tab: Tab,
     home: Load<HomeFeed>,
     home_chip: Option<usize>,
@@ -116,13 +122,17 @@ pub struct App {
     recognition_generation: u64,
     history_pending: Option<HistoryPending>,
     open_play_local: bool,
-    theme_key: (ml_core::ThemeMode, u32),
+    theme_key: (ml_core::ThemeMode, u32, bool),
     settings_dirty_at: Option<Instant>,
     extras: PlayerExtras,
     muted: bool,
     window_visible: bool,
     demo: Option<DemoMode>,
     demo_lyrics_pending: bool,
+    demo_paused: bool,
+    demo_seeked: bool,
+    pointer: Option<egui::Pos2>,
+    click: bool,
     toasts: Toasts,
     mode: RunMode,
     frames: u32,
@@ -130,6 +140,9 @@ pub struct App {
     screenshot_requested: bool,
     screenshot_frame: u32,
     screenshot_idle_frames: u32,
+    /// Wall clock when the screen first became ready; demos flip state (pause,
+    /// popovers) on that frame, so the capture waits one motion duration.
+    idle_since: Option<f64>,
     smoke_reported: bool,
     open_play: bool,
     last_played_id: Option<String>,
@@ -165,7 +178,12 @@ impl App {
         crate::signals::install(cc.egui_ctx.clone());
         install_fonts(&cc.egui_ctx);
         let paths = SettingsPaths::from_env();
-        let settings = paths.load();
+        let mut settings = paths.load();
+        if std::env::var_os("METROLIST_REDUCE_MOTION")
+            .is_some_and(|value| value != "0" && !value.is_empty())
+        {
+            settings.reduce_motion = true;
+        }
         let theme = Theme::from_settings(&settings);
         theme.install(&cc.egui_ctx);
         if let Some(path) = paths.ensure_settings_file() {
@@ -271,7 +289,11 @@ impl App {
             .map(|info| info.name.clone())
             .filter(|name| !name.trim().is_empty())
             .unwrap_or_else(|| "Listener".to_string());
-        let theme_key = (settings.theme_mode, settings.seed_color);
+        let theme_key = (
+            settings.theme_mode,
+            settings.seed_color,
+            settings.reduce_motion,
+        );
         let demo = options.demo;
         services.load_home();
         if search.query.is_empty() {
@@ -287,6 +309,9 @@ impl App {
             art: ArtCache::new(),
             route: Route::Home,
             back: Vec::new(),
+            enter_route: Route::Home,
+            enter_start: f64::NEG_INFINITY,
+            enter_from_x: 0.0,
             tab: Tab::Home,
             home,
             home_chip: None,
@@ -336,6 +361,10 @@ impl App {
             window_visible: true,
             demo,
             demo_lyrics_pending: false,
+            demo_paused: false,
+            demo_seeked: false,
+            pointer: options.pointer.map(|(x, y)| egui::pos2(x, y)),
+            click: options.click,
             toasts,
             mode: options.mode,
             frames: 0,
@@ -343,6 +372,7 @@ impl App {
             screenshot_requested: false,
             screenshot_frame: 0,
             screenshot_idle_frames: 0,
+            idle_since: None,
             smoke_reported: false,
             open_play: false,
             last_played_id: None,
@@ -355,6 +385,10 @@ impl App {
         }
         match demo {
             Some(DemoMode::Player) => {
+                app.player_open = true;
+                app.start_player_demo();
+            }
+            Some(DemoMode::PlayerPaused) => {
                 app.player_open = true;
                 app.start_player_demo();
             }
@@ -476,8 +510,7 @@ impl App {
         }
     }
 
-    /// CLI demo: the only allowed screenshot track. The `next` radio queue
-    /// replaces it with full metadata once resolved.
+    /// CLI demo: the only track any demo may queue or play.
     const DEMO_SONG_ID: &str = "oWqnJdGy_84";
 
     fn demo_song() -> Song {
@@ -490,21 +523,39 @@ impl App {
         }
     }
 
-    fn start_demo(&mut self) {
-        let song = Self::demo_song();
-        self.radio_for = Some(song.id.clone());
-        self.services.play_song(song);
+    /// Queue/lyrics demos: the approved fixture only, repeated so the queue has
+    /// rows. A list source never starts radio or fetches `next`.
+    fn demo_queue() -> Vec<Song> {
+        vec![Self::demo_song(); 3]
     }
 
-    /// Player screenshots must not enqueue or play anything besides the one
-    /// approved fixture, so start a single-track queue without radio.
-    fn start_player_demo(&mut self) {
-        // Screenshot playback stays muted; an unmuted null sink can reject the
-        // stream-unmute property and abort the track before it renders.
+    /// Screenshot playback stays muted: an unmuted null sink can reject the
+    /// stream-unmute property and abort the track before it renders.
+    fn mute_for_demo(&mut self) {
         self.muted = true;
         self.services.set_muted(true);
-        let song = Self::demo_song();
-        self.play_songs(vec![song], 0, QueueSource::List);
+    }
+
+    fn start_demo(&mut self) {
+        self.mute_for_demo();
+        self.play_songs(Self::demo_queue(), 0, QueueSource::List);
+    }
+
+    /// Park the player demo one minute in so screenshot evidence shows real fill.
+    fn demo_seek_once(&mut self) {
+        if self.demo_seeked {
+            return;
+        }
+        if self.snapshot.position_ms > 1500 && self.snapshot.is_playing() {
+            self.services.seek(60_000);
+            self.demo_seeked = true;
+        }
+    }
+
+    /// Player screenshots play the approved fixture only, without radio.
+    fn start_player_demo(&mut self) {
+        self.mute_for_demo();
+        self.play_songs(vec![Self::demo_song()], 0, QueueSource::List);
     }
 
     fn start_download_demo(&mut self) {
@@ -943,6 +994,7 @@ impl App {
                             self.services.clear_radio();
                         }
                         self.services.play(songs, index, source);
+                        self.snapshot = self.services.snapshot();
                         if radio {
                             // Fetch one page immediately; later pages follow
                             // automatically as the queue approaches its end.
@@ -1578,11 +1630,30 @@ impl App {
 
     // -------------------------------------------------------------- actions
 
+    /// A row tap may continue a one-song list as radio; an explicit Play all
+    /// always plays the list. Both paths share this one decision.
+    fn play_intent(&mut self, songs: Vec<Song>, index: usize, source: QueueSource, play_all: bool) {
+        if songs.is_empty() {
+            return;
+        }
+        if pure::play_starts_radio(songs.len(), source, play_all) {
+            self.playback_error = None;
+            self.radio_for = Some(songs[0].id.clone());
+            self.services.play_song(songs[0].clone());
+        } else {
+            self.play_songs(songs, index, source);
+        }
+    }
+
     fn play_songs(&mut self, songs: Vec<Song>, index: usize, source: QueueSource) {
         self.playback_error = None;
         self.radio_for = None;
         self.services.clear_radio();
         self.services.play(songs, index, source);
+        // The controller fills `current`/queue_len immediately; without this the
+        // mini player stays hidden until the stream URL resolves and the first
+        // snapshot arrives, so Play would look like a no-op.
+        self.snapshot = self.services.snapshot();
     }
 
     fn submit_search(&mut self) {
@@ -1618,6 +1689,9 @@ impl App {
         self.search.history.insert(0, query);
         self.search.history.truncate(10);
         self.search.suggestions.clear();
+        // Search is the next tab to the right of Home; direct assignment skips
+        // `set_route`, so record the direction for the enter animation.
+        self.enter_from_x = motion::ROUTE_SLIDE;
         self.route = Route::Search;
         self.tab = Tab::Search;
         self.back.clear();
@@ -1638,6 +1712,27 @@ impl App {
     }
 
     fn set_route(&mut self, target: Route) {
+        let shift = self.enter_shift(&target);
+        self.set_route_with_shift(target, shift);
+    }
+
+    /// Signed route-enter start offset: tab travel direction, otherwise a push.
+    fn enter_shift(&self, target: &Route) -> f32 {
+        if let (Some(old), Some(new)) = (self.route.tab(), target.tab()) {
+            let index = |tab: Tab| Tab::ALL.iter().position(|candidate| *candidate == tab);
+            if old != new {
+                return if index(new) > index(old) {
+                    motion::ROUTE_SLIDE
+                } else {
+                    -motion::ROUTE_SLIDE
+                };
+            }
+        }
+        motion::ROUTE_SLIDE
+    }
+
+    fn set_route_with_shift(&mut self, target: Route, shift: f32) {
+        self.enter_from_x = shift;
         if self.route == Route::Recognize && target != Route::Recognize && self.recognition.busy() {
             self.recognition_generation = self.services.cancel_recognition();
             self.recognition.cancel();
@@ -1658,6 +1753,7 @@ impl App {
                         loading: true,
                         ..Load::default()
                     },
+                    sort: Default::default(),
                 };
                 self.services.album(id);
             }
@@ -1669,6 +1765,7 @@ impl App {
                         loading: true,
                         ..Load::default()
                     },
+                    sort: Default::default(),
                 };
                 self.services.artist(id);
             }
@@ -1680,6 +1777,7 @@ impl App {
                         loading: true,
                         ..Load::default()
                     },
+                    sort: Default::default(),
                 };
                 self.services.playlist(id);
             }
@@ -1788,9 +1886,9 @@ impl App {
     fn go_back(&mut self) {
         self.open_play = false;
         if let Some(previous) = pure::back_route(&mut self.back) {
-            self.set_route(previous);
+            self.set_route_with_shift(previous, -motion::ROUTE_SLIDE);
         } else if self.route != Route::Home {
-            self.set_route(Route::Home);
+            self.set_route_with_shift(Route::Home, -motion::ROUTE_SLIDE);
         }
     }
 
@@ -2063,6 +2161,7 @@ impl App {
                 && matches!(
                     &intent,
                     Intent::Play { .. }
+                        | Intent::PlayAll { .. }
                         | Intent::PlayCatalog { .. }
                         | Intent::PlayShuffled { .. }
                         | Intent::OpenPlay(_)
@@ -2079,15 +2178,8 @@ impl App {
                     songs,
                     index,
                     source,
-                } => {
-                    if songs.len() == 1 && source == QueueSource::List {
-                        self.playback_error = None;
-                        self.radio_for = Some(songs[0].id.clone());
-                        self.services.play_song(songs[0].clone());
-                    } else {
-                        self.play_songs(songs, index, source);
-                    }
-                }
+                } => self.play_intent(songs, index, source, false),
+                Intent::PlayAll { songs, source } => self.play_intent(songs, 0, source, true),
                 Intent::PlayCatalog { songs, index } => {
                     self.play_songs(songs, index, QueueSource::List);
                 }
@@ -2132,6 +2224,7 @@ impl App {
                     self.radio_for = None;
                     self.services.clear_radio();
                     self.services.play_shuffled(songs, source);
+                    self.snapshot = self.services.snapshot();
                 }
                 Intent::StartRadio(song) => {
                     self.playback_error = None;
@@ -2277,6 +2370,7 @@ impl App {
                 | player::PlayerAction::Seek(_)
                 | player::PlayerAction::ToggleShuffle
                 | player::PlayerAction::CycleRepeat
+                | player::PlayerAction::StartRadio
         ) && self.block_together_guest_control()
         {
             return;
@@ -2337,6 +2431,14 @@ impl App {
             player::PlayerAction::SetVolume(volume) => {
                 self.services.set_volume(pure::volume_target(volume));
             }
+            player::PlayerAction::StartRadio => {
+                if let Some(song) = self.snapshot.current.clone() {
+                    self.playback_error = None;
+                    self.radio_for = Some(song.id.clone());
+                    self.services.play_song(song);
+                }
+            }
+            player::PlayerAction::OpenArtist(id) => self.navigate(Route::Artist { id }),
             player::PlayerAction::Close => self.player_open = false,
         }
     }
@@ -2564,7 +2666,7 @@ impl App {
                 &self.theme,
                 &self.services,
                 &mut self.art,
-                &self.page.data,
+                &mut self.page,
                 current.as_ref(),
                 width,
             ),
@@ -2966,7 +3068,11 @@ impl App {
         if !changed {
             return;
         }
-        let key = (self.settings.theme_mode, self.settings.seed_color);
+        let key = (
+            self.settings.theme_mode,
+            self.settings.seed_color,
+            self.settings.reduce_motion,
+        );
         if key != self.theme_key {
             self.theme = Theme::from_settings(&self.settings);
             self.theme.install(ctx);
@@ -3107,12 +3213,29 @@ impl App {
         }
     }
 
-    fn shell(&mut self, ui: &mut Ui, screen_width: f32, expanded: bool) {
+    /// Advances the one-shot route-enter animation and requests frames while it
+    /// runs. Restarts (with a snap) when the route changes again mid-flight.
+    fn route_motion(&mut self, ui: &Ui) -> f32 {
+        let now = ui.input(|input| input.time);
+        if self.enter_route != self.route {
+            self.enter_route = self.route.clone();
+            self.enter_start = now;
+        }
+        let progress = motion::progress(now, self.enter_start, motion::ENTER);
+        if progress < 1.0 {
+            ui.ctx().request_repaint();
+        }
+        progress
+    }
+
+    fn shell(&mut self, ui: &mut Ui, screen_width: f32, expanded: bool, mini_t: f32) {
         let theme = self.theme.clone();
         let bg = theme.bg();
         let panel_frame = Frame::new().fill(bg);
         let title = self.title().to_owned();
         let back = self.route.tab().is_none();
+        let enter_t = self.route_motion(ui);
+        let slide_x = self.enter_from_x * (1.0 - enter_t);
         if expanded {
             let content_width = (screen_width - 88.0 - 32.0).min(960.0);
             Panel::left("nav_rail")
@@ -3150,7 +3273,7 @@ impl App {
                     .show(ui, |ui| {
                         ui.add_space(4.0);
                         center_column(ui, content_width, |ui| {
-                            self.mini_player(ui, content_width);
+                            self.mini_player(ui, content_width, mini_t);
                         });
                         ui.add_space(8.0);
                     });
@@ -3161,8 +3284,9 @@ impl App {
                     ScrollArea::vertical()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            center_column(ui, content_width, |ui| {
+                            center_column_shift(ui, content_width, slide_x, |ui| {
                                 ui.add_space(4.0);
+                                ui.set_opacity(enter_t);
                                 self.route_content(ui, content_width);
                             });
                         });
@@ -3191,7 +3315,7 @@ impl App {
                     if self.snapshot.current.is_some() {
                         ui.add_space(4.0);
                         center_column(ui, content_width, |ui| {
-                            self.mini_player(ui, content_width);
+                            self.mini_player(ui, content_width, mini_t);
                         });
                     }
                     center_column(ui, content_width, |ui| {
@@ -3212,8 +3336,9 @@ impl App {
                     ScrollArea::vertical()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            center_column(ui, content_width, |ui| {
+                            center_column_shift(ui, content_width, slide_x, |ui| {
                                 ui.add_space(4.0);
+                                ui.set_opacity(enter_t);
                                 self.route_content(ui, content_width);
                             });
                         });
@@ -3221,7 +3346,7 @@ impl App {
         }
     }
 
-    fn mini_player(&mut self, ui: &mut Ui, width: f32) {
+    fn mini_player(&mut self, ui: &mut Ui, width: f32, enter_t: f32) {
         let Some(song) = self.snapshot.current.clone() else {
             return;
         };
@@ -3233,6 +3358,7 @@ impl App {
             self.snapshot.is_playing(),
             texture.as_ref(),
             width,
+            enter_t,
         );
         if let Some(action) = action {
             self.apply_mini(action);
@@ -3278,15 +3404,24 @@ impl App {
                 offline: current
                     .as_ref()
                     .is_some_and(|song| self.services.is_downloaded(&song.id)),
+                radio_active: self.services.queue_view().source == QueueSource::Radio,
             };
             action = player::show(ui, &theme, &view, width);
         });
         self.apply_player(action);
     }
 
-    fn queue_overlay(&mut self, ctx: &Context) {
+    fn queue_overlay(&mut self, ctx: &Context, progress: f32) {
         let (songs, position) = self.services.queue_display();
-        let action = queue_screen::show_modal(ctx, &self.theme, &self.services, &songs, position);
+        let action = queue_screen::show_modal(
+            ctx,
+            &self.theme,
+            &self.services,
+            &songs,
+            position,
+            self.snapshot.is_playing(),
+            progress,
+        );
         if self.together_guest()
             && matches!(
                 action,
@@ -3350,12 +3485,31 @@ impl App {
                         self.route == Route::Lyrics && self.lyrics.data.is_some()
                     }
                     Some(DemoMode::Player) => {
+                        self.demo_seek_once();
                         self.snapshot
                             .current
                             .as_ref()
                             .is_some_and(|song| song.id == Self::DEMO_SONG_ID)
                             && self.snapshot.is_playing()
-                            && self.snapshot.position_ms > 1500
+                            && self.snapshot.position_ms > 61_500
+                            && self.toasts.is_empty()
+                    }
+                    Some(DemoMode::PlayerPaused) => {
+                        self.demo_seek_once();
+                        if !self.demo_paused
+                            && self.snapshot.is_playing()
+                            && self.snapshot.position_ms > 61_500
+                        {
+                            self.services.toggle_play();
+                            self.demo_paused = true;
+                        }
+                        self.snapshot
+                            .current
+                            .as_ref()
+                            .is_some_and(|song| song.id == Self::DEMO_SONG_ID)
+                            && self.demo_paused
+                            && !self.snapshot.is_playing()
+                            && self.snapshot.position_ms > 0
                             && self.toasts.is_empty()
                     }
                     Some(DemoMode::Queue) => {
@@ -3396,16 +3550,19 @@ impl App {
                 let idle = (self.demo.is_some() || !self.home.loading)
                     && !self.page.data.loading
                     && demo_ready;
+                let now = ctx.input(|i| i.time);
                 if idle {
                     self.screenshot_idle_frames = self.screenshot_idle_frames.saturating_add(1);
+                    self.idle_since.get_or_insert(now);
+                } else {
+                    self.idle_since = None;
                 }
-                // Give thumbnails a moment to download and upload after the feed
-                // lands. Demo screens render local fixtures and only need a
-                // couple of frames; waiting longer let occluded windows stall
-                // forever because wgpu stopped delivering frames.
-                let settled = self.frames >= 6
-                    && demo_ready
-                    && (self.demo.is_some() || self.screenshot_idle_frames >= 45);
+                // Frame counts say nothing about wall time when the GPU repaints
+                // uncapped, and a demo flips to its final state (pause, popup)
+                // on the first idle frame. Wait one motion duration from then.
+                let idle_for = self.idle_since.map_or(0.0, |start| now - start);
+                let min_frames = if self.pointer.is_some() { 45 } else { 6 };
+                let settled = self.frames >= min_frames && idle_for >= 0.35 && demo_ready;
                 if !self.screenshot_requested && (settled || self.frames >= 360) {
                     self.screenshot_requested = true;
                     self.screenshot_frame = self.frames;
@@ -3480,6 +3637,36 @@ fn lyrics_offset_key(video_id: &str) -> String {
 }
 
 impl eframe::App for App {
+    /// Screenshot-only pointer injection for docs hover/open states, before
+    /// egui processes the frame. External XTEST input does not reach XWayland
+    /// windows in this Wayland session.
+    fn raw_input_hook(&mut self, _ctx: &Context, raw_input: &mut egui::RawInput) {
+        let Some(pos) = self.pointer else {
+            return;
+        };
+        if !matches!(self.mode, RunMode::Screenshot { .. }) {
+            return;
+        }
+        raw_input.events.push(egui::Event::PointerMoved(pos));
+        if !self.click {
+            return;
+        }
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        match self.frames {
+            30 => raw_input.events.push(button(true)),
+            31 => {
+                raw_input.events.push(button(false));
+                raw_input.events.push(egui::Event::PointerMoved(pos));
+            }
+            _ => {}
+        }
+    }
+
     fn on_exit(&mut self) {
         if self.recognition.busy() {
             self.services.cancel_recognition();
@@ -3531,6 +3718,30 @@ impl eframe::App for App {
         let screen = ctx.content_rect();
         let expanded = shell::is_expanded(screen.width());
         let bg = self.theme.bg();
+        // Bool animations run every frame, including while the target is off
+        // screen, so closing and reopening replays the entrance.
+        let player_t = motion::t(
+            ui,
+            egui::Id::unique("player_open_anim"),
+            self.player_open,
+            motion::MODAL,
+        );
+        let queue_t = motion::t(
+            ui,
+            egui::Id::unique("queue_open_anim"),
+            self.queue_open,
+            motion::MODAL,
+        );
+        let mini_t = motion::t(
+            ui,
+            egui::Id::unique("mini_player_anim"),
+            self.snapshot.current.is_some(),
+            motion::MODAL,
+        );
+        let previous_opacity = ui.opacity();
+        if self.player_open {
+            ui.set_opacity(previous_opacity * player_t);
+        }
         Frame::central_panel(ui.style())
             .fill(bg)
             .inner_margin(0)
@@ -3539,11 +3750,22 @@ impl eframe::App for App {
                 if self.player_open {
                     self.player_route(ui, screen.width());
                 } else {
-                    self.shell(ui, screen.width(), expanded);
+                    self.shell(ui, screen.width(), expanded, mini_t);
                 }
             });
+        ui.set_opacity(previous_opacity);
+        if self.player_open {
+            let scale = motion::lerp(motion::PLAYER_SCALE, 1.0, player_t);
+            ctx.transform_layer_shapes_after_rounding(
+                LayerId::background(),
+                TSTransform {
+                    scaling: scale,
+                    translation: screen.center().to_vec2() * (1.0 - scale),
+                },
+            );
+        }
         if self.queue_open {
-            self.queue_overlay(&ctx);
+            self.queue_overlay(&ctx, queue_t);
         }
         self.toasts.show(&ctx, &self.theme);
         self.after_frame(&ctx);
@@ -3562,12 +3784,22 @@ impl Drop for App {
 /// The spacer lives in a horizontal row: `add_space` follows the current
 /// layout, so in the top-down body it would add height instead of a margin.
 fn center_column<R>(ui: &mut Ui, width: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    center_column_shift(ui, width, 0.0, add)
+}
+
+/// [`center_column`] shifted horizontally by `shift` dp for route transitions.
+fn center_column_shift<R>(
+    ui: &mut Ui,
+    width: f32,
+    shift: f32,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> R {
     let available = ui.available_width();
     let height = ui.available_height();
     let width = width.min(available).max(0.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        ui.add_space(((available - width) / 2.0).max(0.0));
+        ui.add_space((((available - width) / 2.0) + shift).max(0.0));
         ui.allocate_ui_with_layout(
             Vec2::new(width, height),
             Layout::top_down(Align::Min),
@@ -3622,5 +3854,23 @@ mod tests {
                 id: "UCartist".into()
             })
         );
+    }
+
+    #[test]
+    fn demo_queue_is_only_the_approved_fixture_and_never_radio() {
+        let songs = App::demo_queue();
+        assert!(songs.len() > 1, "the queue UI needs more than one row");
+        assert!(
+            songs.iter().all(|song| song.id == App::DEMO_SONG_ID),
+            "demo queue must not contain any other track"
+        );
+        assert!(songs.iter().all(|song| song.title == "Empty Streets"));
+        // `start_demo` goes straight to `play_songs` with a list source, which
+        // clears radio; the multi-song list also fails the radio-start rule.
+        assert!(!pure::play_starts_radio(
+            songs.len(),
+            QueueSource::List,
+            false
+        ));
     }
 }
