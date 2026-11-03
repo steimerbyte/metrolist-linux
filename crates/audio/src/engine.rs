@@ -40,13 +40,19 @@ const OBSERVED_PROPERTIES: &[&str] = &[
 
 /// Position/state coalescing interval (~10 Hz).
 const TICK: Duration = Duration::from_millis(100);
+/// Ticks that reassert `ao-mute=false` after a stream or track starts. The
+/// audio server applies its saved stream mute asynchronously, sometimes after
+/// the output is already playing, so one clear is not reliable.
+const STREAM_UNMUTE_TICKS: u8 = 4;
 const SOCKET_WAIT: Duration = Duration::from_secs(5);
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(3);
 const DEMUXER_MAX_BYTES: u64 = 64 * 1024 * 1024;
-/// Normal playback client id. Deliberately distinct from the legacy
-/// `Metrolist Desktop` id, whose PipeWire stream-restore entry is muted on some
-/// hosts; an explicit `--mute=no` plus a fresh id keeps normal playback
-/// audible.
+/// Normal playback client id.
+///
+/// `--mute=no` is not enough on its own: mpv's `volume`/`mute` are software
+/// gain on its PipeWire/Pulse outputs, so a stream-restore entry for this id
+/// can mute the node while mpv reports 100%/unmuted. [`Ipc::clear_stream_mute`]
+/// clears that node mute once the audio output exists.
 const AUDIO_CLIENT_NAME: &str = "Metrolist Desktop Playback";
 /// Test/probe client id. The host's per-app mute keeps it silent, and
 /// `--mute=yes` makes the silence independent of that stored state.
@@ -133,6 +139,12 @@ pub(crate) fn resolve_muted(config: &AudioConfig) -> bool {
     config.muted.unwrap_or_else(env_test_mute)
 }
 
+/// Whether a stream-level mute may be cleared. False keeps test/probe engines
+/// silent even on hosts whose stream-restore entry is unmuted.
+pub(crate) fn should_clear_stream_mute(allow_unmute: bool, intended_muted: bool) -> bool {
+    allow_unmute && !intended_muted
+}
+
 fn base_args(socket_path: &Path, muted: bool) -> Vec<String> {
     let client_name = if muted {
         TEST_AUDIO_CLIENT_NAME
@@ -151,8 +163,8 @@ fn base_args(socket_path: &Path, muted: bool) -> Vec<String> {
         "--cache=yes".to_string(),
         format!("--demuxer-max-bytes={DEMUXER_MAX_BYTES}"),
         format!("--audio-client-name={client_name}"),
-        // Explicit in both modes: the stream-restore per-app mute must not
-        // decide whether playback is audible.
+        // mpv applies this to software gain only; `ao-mute` is the stream-level
+        // switch and is cleared after the output opens (see clear_stream_mute).
         if muted {
             "--mute=yes".to_string()
         } else {
@@ -386,7 +398,7 @@ impl MpvEngine {
             };
             match wait_for_socket(&socket_path, &mut child) {
                 Ok(stream) => {
-                    return Self::start(stream, child, socket_path, binary, device.clone());
+                    return Self::start(stream, child, socket_path, binary, device.clone(), !muted);
                 }
                 Err(error) => {
                     let _ = child.kill();
@@ -405,6 +417,7 @@ impl MpvEngine {
         socket_path: PathBuf,
         binary: PathBuf,
         device: Option<String>,
+        allow_unmute: bool,
     ) -> MlResult<Self> {
         let reader_stream = match stream.try_clone() {
             Ok(stream) => stream,
@@ -439,6 +452,7 @@ impl MpvEngine {
                 engine_binary,
                 device,
                 thread_device,
+                allow_unmute,
             );
             match reader {
                 Ok(reader) => {
@@ -709,6 +723,13 @@ struct Ipc {
     pending_start_ms: Option<u64>,
     last_metadata: TrackMetadata,
     last_audio_params: AudioParams,
+    /// Playback may be audible: false in test-mute mode, where the stream mute
+    /// must stay untouched so probes never make noise.
+    allow_unmute: bool,
+    /// Remaining `ao-mute` reasserts after a stream/track start. The server's
+    /// stream restore is applied asynchronously and can overwrite the first
+    /// clear, so it is repeated for a few ticks (~400 ms).
+    unmute_checks: u8,
     dirty: bool,
     broken: bool,
 }
@@ -721,6 +742,7 @@ impl Ipc {
         binary: PathBuf,
         device: Option<String>,
         shared_device: Arc<Mutex<Option<String>>>,
+        allow_unmute: bool,
     ) -> Self {
         Self {
             stream,
@@ -739,6 +761,8 @@ impl Ipc {
             pending_start_ms: None,
             last_metadata: TrackMetadata::default(),
             last_audio_params: AudioParams::default(),
+            allow_unmute,
+            unmute_checks: 0,
             dirty: true,
             broken: false,
         }
@@ -892,6 +916,11 @@ impl Ipc {
                     vec![json!("set_property"), json!("mute"), json!(muted)],
                     event_tx,
                 );
+                // Unmuting also heals a stream-level mute restored by the
+                // audio server, which software `mute` cannot override.
+                if !muted {
+                    self.clear_stream_mute(event_tx);
+                }
                 self.dirty = true;
             }
             AudioCommand::SetSpeed(speed) => {
@@ -997,6 +1026,31 @@ impl Ipc {
         self.applied_af = desired;
     }
 
+    /// Clear a stream-level mute left by the audio server's stream restore.
+    ///
+    /// mpv's `volume`/`mute` only change software gain on its PipeWire/Pulse
+    /// outputs: a restored `ao-mute=true` silences the node while mpv (and the
+    /// UI) report 100%/unmuted.
+    fn clear_stream_mute(&mut self, event_tx: &Sender<AudioEvent>) {
+        if !should_clear_stream_mute(self.allow_unmute, self.state.muted) {
+            return;
+        }
+        self.request(
+            vec![json!("set_property"), json!("ao-mute"), json!(false)],
+            event_tx,
+        );
+    }
+
+    /// Clear now and keep reasserting for [`STREAM_UNMUTE_TICKS`], because the
+    /// server can apply its restored mute just after the output opens.
+    fn schedule_stream_unmute(&mut self, event_tx: &Sender<AudioEvent>) {
+        if !should_clear_stream_mute(self.allow_unmute, self.state.muted) {
+            return;
+        }
+        self.unmute_checks = STREAM_UNMUTE_TICKS;
+        self.clear_stream_mute(event_tx);
+    }
+
     fn handle_message(&mut self, message: MpvMessage, event_tx: &Sender<AudioEvent>) -> bool {
         match message {
             MpvMessage::Response {
@@ -1031,6 +1085,7 @@ impl Ipc {
                     self.state.eof = false;
                     self.state.loading = false;
                     self.dirty = true;
+                    self.schedule_stream_unmute(event_tx);
                     if let Some(start_ms) = self.pending_start_ms.take() {
                         self.request(
                             vec![
@@ -1076,6 +1131,9 @@ impl Ipc {
                     true
                 }
                 "audio-reconfig" => {
+                    // A device switch can recreate the output node; clear any
+                    // mute the server restores on the fresh node.
+                    self.schedule_stream_unmute(event_tx);
                     self.dirty = true;
                     true
                 }
@@ -1148,6 +1206,7 @@ impl Ipc {
                 if params != self.last_audio_params {
                     let _ = event_tx.send(AudioEvent::AudioParams(params.clone()));
                     self.last_audio_params = params;
+                    self.schedule_stream_unmute(event_tx);
                 }
             }
             "metadata" => {
@@ -1197,6 +1256,10 @@ impl Ipc {
     fn tick(&mut self, event_tx: &Sender<AudioEvent>) -> bool {
         if self.broken {
             return false;
+        }
+        if self.unmute_checks > 0 {
+            self.unmute_checks -= 1;
+            self.clear_stream_mute(event_tx);
         }
         if let Some(position_ms) = self.latest_pos.take() {
             if position_ms != self.last_emitted_pos {
@@ -1332,6 +1395,14 @@ mod tests {
             muted: Some(true),
             ..AudioConfig::default()
         }));
+    }
+
+    #[test]
+    fn stream_mute_is_only_cleared_when_audible_playback_is_allowed() {
+        assert!(should_clear_stream_mute(true, false));
+        assert!(!should_clear_stream_mute(true, true));
+        assert!(!should_clear_stream_mute(false, false));
+        assert!(!should_clear_stream_mute(false, true));
     }
 
     #[test]

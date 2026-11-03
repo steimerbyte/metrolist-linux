@@ -113,7 +113,7 @@ commit against the parser from the pinned Verus release (Lynette's own
 source drift (`crates/**` changed without a re-freeze) as well as on a failing
 gate; CI duplicates no version pins, it sources `proofs/verus.env`.
 
-Current status: **12 proofs, 274 functions verified, 0 errors**.
+Current status: **12 proofs, 277 functions verified, 0 errors**.
 
 | proof | source | verified | log |
 |-------|--------|---------:|-----|
@@ -236,7 +236,10 @@ Verus cannot take: I/O, async, floats, serde, FFI/D-Bus, `format!`, iterators,
 | `set_volume` clamp `0.0..=1.0` | OUT-OF-SUBSET | `f32`; contract frozen (clamp, then publish) |
 | `set_sleep_timer` seconds (`m*60` min 86 400) | VERIFIED | `proofs/audio` transcribes the expression as `sleep_seconds`; `Instant`/`Duration` themselves are OUT-OF-SUBSET |
 | `sleep_window_contains` (daily window, wrapping) | VERIFIED | real `controller.rs` body verbatim (`% 1440`, `start == end` whole day); `lemma_full_day_always_contains`, `lemma_ui_windows`, `lemma_ordered_step` |
-| `MpvEngine::request` id wrap (`wrapping_add(1)`) | VERIFIED | `proofs/audio` models the update as `next_request_id` ((id+1) mod 2^64) |
+| `Ipc::request` id wrap (`wrapping_add(1)`) | VERIFIED | `proofs/audio` models the update as `next_request_id` ((id+1) mod 2^64) |
+| `engine::should_clear_stream_mute` (`allow_unmute && !intended_muted`, v0.1.1) | VERIFIED | `proofs/audio`: exact predicate plus `lemma_stream_mute_table` (four-case truth table) and `lemma_muted_stays_muted` |
+| `clear_stream_mute`, `allow_unmute`/`unmute_checks` plumbing, `STREAM_UNMUTE_TICKS` | OUT-OF-SUBSET | `Ipc` socket/property state machine; only the pure predicate is proven |
+| `is_current_entry` / `play_queue` keep-stream click (v0.1.1) | CANDIDATE | controller state machine over `fade`/`current_url`/queue contents; pinned by three regression tests |
 | `seek`, `set_position_ms`, `position_ms` clamps | CANDIDATE | `u64` saturating arithmetic, no floats |
 | `restore_queue` | CANDIDATE | field copy + UI emits (no arithmetic); needs the controller-state model |
 | `append_queue` (dedup by id, append, count) | CANDIDATE | `HashSet<String>` + `Queue` model; the same fold over id tokens is VERIFIED in `proofs/pages` |
@@ -327,6 +330,8 @@ Verus cannot take: I/O, async, floats, serde, FFI/D-Bus, `format!`, iterators,
 | `pure::download_icon`, `pure::download_click` | VERIFIED | `proofs/ui`: icon ids are the real table (one per badge, `1..=6`); click table proven and `Completed` is the only inert click |
 | `pure::cookie_import_format` | VERIFIED | `proofs/ui` (UTF-8 bytes; ASCII `trim_start`; `lines()` = runs of non-`\n`): JSON wins on a trimmed `[`/`{`, then a `# Netscape` header or a ≥7-field tab line, then any `=`, else unknown |
 | `pure::{seek_target, volume_target, crossfade_seconds, playback_speed, speed_percent, normalization_gain, volume_step, clamp_eq_bands}` | OUT-OF-SUBSET | `f32`/`f64` clamp+round; no float encoding in vstd, so no bound on the returned float is claimed (the source doc comments' postconditions are unproven here) |
+| `pure::{wrap_vinyl_angle, advance_vinyl_angle}` (v0.1.1) | OUT-OF-SUBSET | `f32` modulo/`TAU` wrap and `dt.clamp(0.0, 0.05)`; same float policy, pinned by the UI rotation tests |
+| `shell::{NavAction, active_tab, settings_active}` nav routing (v0.1.1) | OUT-OF-SUBSET | UI routing state machine over the current route; `apply_nav` is a table dispatch with side effects |
 | `pure::{crossfade_label, gain_label, bytes_text, download_progress_text, account_error_message, local_file_url, parse_deep_link, first_deep_link, sanitize_proxy_url, valid_search_query}` | OUT-OF-SUBSET | `String`/`format!`/`&str` scanning (`trim`, `chars`, `strip_prefix`) and `Path` percent-encoding; `account_error_message` additionally maps error payload strings, so only its arm selection could be modelled |
 | `pure::{download_hint, tray_command, stats_period_label, month_short}` | CANDIDATE | literal enum/table → text (`&'static str`); no arithmetic, pinned by the unit tests, not transcribed into this pair |
 | `pure::parse_persisted_queue` | OUT-OF-SUBSET | `serde_json` + `HashSet` |
@@ -425,7 +430,7 @@ Post-review changes (same day, **not covered by that ACCEPT**):
   proven `radio_event`/`radio_fallback` bodies were re-checked verbatim
   against it.
 
-### Release freeze 2026-11-02
+### Release freeze 2026-11-02 (superseded by the v0.1.1 freeze below)
 
 Twelve pairs are frozen: `proofs/FREEZE.sha256` =
 `a561191c669fa98c97ef384bec14aa952f9023c2643cfa8fcfb28232b55c664d`
@@ -475,7 +480,7 @@ remains green (274 verified / 0 errors, 12 pairs); `REVIEW.md` now carries the
 current ACCEPT.
 
 What green proves, per the gate definition above: each frozen `candidate.rs`
-verifies under the pinned Verus (`0.2026.11.02.8bf68ee`, 274 verified / 0
+verifies under the pinned Verus (`0.2026.11.02.8bf68ee`, 277 verified / 0
 errors across the 12 pairs); Lynette `additions` accepts it; `trust_scan.py`
 finds no `assume`/`admit`/`external_body`/`axiom`/`assume_specification`/
 `unimplemented!`; the pair matches `FREEZE.sha256`; and `spec_guard.py` plus
@@ -505,3 +510,39 @@ Residual trust is unchanged by this review and remains explicit:
   scripts can edit this record and recompute both hashes; the real controls
   are independent CI on the pinned toolchain plus a fresh reviewer re-signing
   after any gate change.
+
+### Release freeze 2026-11-02 v0.1.1
+
+Twelve pairs are frozen at version `0.1.1`: `proofs/FREEZE.sha256` =
+`1a07e2b574959b8316e97dc64fa1d407b614e07fea315e895bd2d86b45c01676`
+(37 files), `gate_sha256` =
+`9ce7fb1a802dc0600d1dee8cc5df85919a85cd6da3111fb47b2ba22d6e4889ea`.
+**277 functions verified / 0 errors** (audio 12 -> 15 with the new
+`should_clear_stream_mute` obligation); Lynette `additions` and `compare`
+green; trust scan clean; `check-drift.sh` 21/21; the gate self-test covers all
+twelve pairs. `docs/SOURCE-FREEZE.sha256` (246 files) was regenerated for this
+tree: `345a3ebb21a15064ca99c1cbbc77c8bbc94f53a8c672b2ecd3dd9a80eebb0485`.
+
+Source delta since the previously accepted freeze (documented per pair, no
+proven body changed except the new predicate):
+
+- `crates/audio/src/{engine,controller}.rs` — stream-level `ao-mute` clear with
+  a four-tick reassert and test-mute opt-in (new pure `should_clear_stream_mute`
+  is now proven), plus keep-stream play when the clicked entry is already
+  loaded; `set_sleep_timer`, `sleep_window_contains` and `Ipc::request` were
+  re-read verbatim.
+- `crates/ui/src/app.rs` — Settings nav routing (`apply_nav` over
+  `shell::NavAction`) and the single-fixture player demo; `url_route` verbatim.
+- `crates/ui/src/pure.rs` — two additive `f32` vinyl-rotation helpers
+  (`wrap_vinyl_angle`, `advance_vinyl_angle`), OUT-OF-SUBSET; the pair's 16
+  source functions are byte-identical.
+- `crates/lyrics/src/providers.rs` — LRCLIB User-Agent from
+  `CARGO_PKG_VERSION`/`CARGO_PKG_REPOSITORY`; not a proof source.
+- `Cargo.toml`/`Cargo.lock` — workspace version `0.1.1` and repository URL.
+
+`REVIEW.md` was **not touched by the author**; the fresh independent review
+has signed `v0.1.1` for this freeze (`freeze_sha256`
+`1a07e2b574959b8316e97dc64fa1d407b614e07fea315e895bd2d86b45c01676`,
+`gate_sha256` `9ce7fb1a802dc0600d1dee8cc5df85919a85cd6da3111fb47b2ba22d6e4889ea`).
+The earlier freeze (`a561191c…` / `7a9f0f1f…`) remains recorded as previously
+ACCEPTED; the current ACCEPT covers v0.1.1 and the release gate now passes.

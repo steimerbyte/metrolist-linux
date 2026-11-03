@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, TextureHandle, Ui, Vec2};
 
-use crate::routes::Tab;
+use crate::routes::{Route, Tab};
 use crate::theme::{medium_font, regular_font, Theme, BODY_SMALL, DP20, DP4, DP8, TITLE_LARGE};
 use crate::widgets::{chip, icon_button_at, nav_item, paint_icon};
 use ml_core::Song;
@@ -10,6 +10,35 @@ use ml_core::Song;
 /// Right-hand action cluster of the top app bar: 40 dp history + sync + avatar
 /// hit areas plus the 8 dp gap before the title.
 const TITLE_ACTIONS: f32 = 138.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavAction {
+    Tab(Tab),
+    Settings,
+}
+
+impl NavAction {
+    pub fn route(self) -> Route {
+        match self {
+            Self::Tab(tab) => Route::from(tab),
+            Self::Settings => Route::Settings,
+        }
+    }
+}
+
+/// Active primary tab for the shell. Settings is a utility destination, so it
+/// never highlights a primary tab alongside itself.
+pub fn active_tab(route: &Route, last_tab: Tab) -> Option<Tab> {
+    if settings_active(route) {
+        None
+    } else {
+        Some(last_tab)
+    }
+}
+
+pub fn settings_active(route: &Route) -> bool {
+    *route == Route::Settings
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TopAction {
@@ -246,31 +275,63 @@ pub fn mini_player(
 }
 
 /// 80 dp bottom navigation bar (compact window class).
-pub fn bottom_nav(ui: &mut Ui, app_theme: &Theme, active: Tab, width: f32) -> Option<Tab> {
+pub fn bottom_nav(
+    ui: &mut Ui,
+    app_theme: &Theme,
+    active: Option<Tab>,
+    settings_active: bool,
+    width: f32,
+) -> Option<NavAction> {
     let mut chosen = None;
     ui.add_space(DP4);
+    let top = ui.cursor().min.y;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = Vec2::ZERO;
-        let item_width = width / Tab::ALL.len() as f32;
+        let item_width = width / (Tab::ALL.len() + 1) as f32;
         for tab in Tab::ALL {
             let response = nav_item(
                 ui,
                 app_theme,
                 tab.icon(),
                 tab.label(),
-                tab == active,
+                active == Some(tab),
                 Vec2::new(item_width, 72.0),
             );
             if response.clicked() {
-                chosen = Some(tab);
+                chosen = Some(NavAction::Tab(tab));
             }
+        }
+        let separator_x = ui.cursor().min.x;
+        ui.painter().line_segment(
+            [
+                egui::pos2(separator_x, top + 16.0),
+                egui::pos2(separator_x, top + 56.0),
+            ],
+            egui::Stroke::new(1.0, app_theme.scheme.outline_variant),
+        );
+        let settings = nav_item(
+            ui,
+            app_theme,
+            "settings",
+            "Settings",
+            settings_active,
+            Vec2::new(item_width, 72.0),
+        )
+        .on_hover_text("Settings");
+        if settings.clicked() {
+            chosen = Some(NavAction::Settings);
         }
     });
     chosen
 }
 
 /// 88 dp navigation rail (expanded window class).
-pub fn nav_rail(ui: &mut Ui, app_theme: &Theme, active: Tab) -> Option<Tab> {
+pub fn nav_rail(
+    ui: &mut Ui,
+    app_theme: &Theme,
+    active: Option<Tab>,
+    settings_active: bool,
+) -> Option<NavAction> {
     let mut chosen = None;
     ui.add_space(DP20);
     let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(88.0, 48.0), Sense::hover());
@@ -290,13 +351,39 @@ pub fn nav_rail(ui: &mut Ui, app_theme: &Theme, active: Tab) -> Option<Tab> {
             app_theme,
             tab.icon(),
             tab.label(),
-            tab == active,
+            active == Some(tab),
             Vec2::new(88.0, 72.0),
         );
         if response.clicked() {
-            chosen = Some(tab);
+            chosen = Some(NavAction::Tab(tab));
         }
     }
+
+    // Utility cluster: pin Settings to the bottom of the rail, separated from
+    // the primary destinations.
+    ui.add_space((ui.max_rect().bottom() - ui.cursor().min.y - 97.0).max(DP8));
+    let (separator, _) = ui.allocate_exact_size(Vec2::new(88.0, 9.0), Sense::hover());
+    ui.painter().line_segment(
+        [
+            egui::pos2(separator.left() + 24.0, separator.center().y),
+            egui::pos2(separator.right() - 24.0, separator.center().y),
+        ],
+        egui::Stroke::new(1.0, app_theme.scheme.outline_variant),
+    );
+    ui.add_space(DP8);
+    let settings = nav_item(
+        ui,
+        app_theme,
+        "settings",
+        "Settings",
+        settings_active,
+        Vec2::new(88.0, 72.0),
+    )
+    .on_hover_text("Settings");
+    if settings.clicked() {
+        chosen = Some(NavAction::Settings);
+    }
+    ui.add_space(DP8);
     chosen
 }
 
@@ -308,4 +395,138 @@ pub fn is_expanded(width: f32) -> bool {
 /// Small label helper for painted bars.
 pub fn small_label(ui: &Ui, at: Pos2, value: &str, color: Color32) {
     crate::widgets::text(ui.painter(), at, value, regular_font(BODY_SMALL), color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pure::back_route;
+    use eframe::egui::{
+        CentralPanel, Context, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, Vec2,
+    };
+    use ml_core::Settings;
+    use std::cell::Cell;
+
+    fn frame(width: f32, height: f32, events: Vec<Event>) -> RawInput {
+        RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height))),
+            events,
+            ..RawInput::default()
+        }
+    }
+
+    #[test]
+    fn settings_nav_click_routes_selected_state_and_back() {
+        let theme = Theme::from_settings(&Settings::default());
+        let ctx = Context::default();
+        let click = Pos2::new(364.5, 40.0);
+        let action = Cell::new(None);
+
+        let render = |events| {
+            let input = frame(405.0, 900.0, events);
+            let mut output = ctx.run_ui(input, |ctx| {
+                CentralPanel::default().show(ctx, |ui| {
+                    action.set(bottom_nav(ui, &theme, None, true, 405.0));
+                });
+            });
+            output.textures_delta.clear();
+        };
+
+        render(vec![Event::PointerMoved(click)]);
+        assert_eq!(action.get(), None);
+
+        render(vec![
+            Event::PointerMoved(click),
+            Event::PointerButton {
+                pos: click,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::default(),
+            },
+        ]);
+        assert_eq!(action.get(), None, "press alone must not activate Settings");
+
+        render(vec![
+            Event::PointerMoved(click),
+            Event::PointerButton {
+                pos: click,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::default(),
+            },
+        ]);
+        assert_eq!(action.get(), Some(NavAction::Settings));
+        assert_eq!(NavAction::Settings.route(), Route::Settings);
+        assert!(settings_active(&Route::Settings));
+        assert_eq!(active_tab(&Route::Settings, Tab::Home), None);
+        assert_eq!(active_tab(&Route::Home, Tab::Library), Some(Tab::Library));
+
+        let mut back = Vec::new();
+        back.push(Route::Home);
+        assert_eq!(NavAction::Settings.route(), Route::Settings);
+        assert_eq!(back_route(&mut back), Some(Route::Home));
+    }
+
+    #[test]
+    fn wide_rail_settings_click_returns_settings_action() {
+        let theme = Theme::from_settings(&Settings::default());
+        let ctx = Context::default();
+        let click = Pos2::new(44.0, 716.0);
+        let action = Cell::new(None);
+        let render = |events| {
+            let input = frame(1100.0, 760.0, events);
+            let mut output = ctx.run_ui(input, |ctx| {
+                CentralPanel::default().show(ctx, |ui| {
+                    action.set(nav_rail(ui, &theme, None, true));
+                });
+            });
+            output.textures_delta.clear();
+        };
+        render(vec![Event::PointerMoved(click)]);
+        render(vec![
+            Event::PointerMoved(click),
+            Event::PointerButton {
+                pos: click,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::default(),
+            },
+        ]);
+        render(vec![
+            Event::PointerMoved(click),
+            Event::PointerButton {
+                pos: click,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::default(),
+            },
+        ]);
+        assert_eq!(action.get(), Some(NavAction::Settings));
+    }
+
+    #[test]
+    fn shell_nav_renders_at_compact_and_wide_without_overflow() {
+        let theme = Theme::from_settings(&Settings::default());
+        for (width, height) in [(405.0, 900.0), (1100.0, 760.0)] {
+            let ctx = Context::default();
+            let mut used_bottom = 0.0;
+            let input = frame(width, height, Vec::new());
+            let mut output = ctx.run_ui(input, |ctx| {
+                CentralPanel::default().show(ctx, |ui| {
+                    let action = if is_expanded(width) {
+                        nav_rail(ui, &theme, None, true)
+                    } else {
+                        bottom_nav(ui, &theme, None, true, width - 32.0)
+                    };
+                    assert_eq!(action, None);
+                    used_bottom = ui.min_rect().bottom();
+                });
+            });
+            output.textures_delta.clear();
+            assert!(
+                used_bottom <= height + 0.5,
+                "shell at {width}x{height} ended at {used_bottom}"
+            );
+        }
+    }
 }

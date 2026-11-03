@@ -5,7 +5,7 @@
 | file | sha256 (at freeze) |
 |------|--------------------|
 | crates/ui/src/services.rs | 17aab95cd8d03f63c52b02be6e6232252250bd5e1428ba09910c0b2f27804633 |
-| crates/ui/src/app.rs | 6a033235107c749996652ecdb1f22211ebd64706fb234c87f7c31f85ecd634c3 |
+| crates/ui/src/app.rs | d6d8f5a17c5c1afbba1fb62203bab9b6ce3bea464b436766d628a7d5de8de7cb |
 | crates/innertube/src/lib.rs | bfa89ea531da62a31afc59bee4978d51606f9d372c72a3c325a21679650a8890 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
@@ -35,6 +35,10 @@ surrounding code changed. Everything else in these files is outside this area.
   The shutdown/leak fix later added `App::shutdown`/`App::exit`, the
   signal wake-up in `logic`, the `cli_exit` atomic hand-off for the screenshot
   callback, and `Drop for App` — all out of subset, `url_route` untouched.
+  v0.1.1 then added Settings nav routing through `shell::{NavAction,
+  active_tab, settings_active}` (`apply_nav`), the single-fixture player demo
+  (`start_player_demo`, `DEMO_SONG_ID`) and stricter screenshot settle gating —
+  again out of subset; `url_route` and its call sites are unchanged.
 - `lib.rs`: `SearchFilter`, `SearchFilter::params` and `search_body` are the
   proven items; `cookie-auth` landed the cookie transport in the same file
   (frozen at its `bfa89ea5…` stable point, search body untouched).
@@ -115,3 +119,22 @@ update only:
 
 The new lifecycle code is out of subset (enumerated above and in `ui`'s
 source); no new obligation is claimed and no proof text changed.
+
+## Re-freeze 2026-11-02 v0.1.1 (Settings nav routing, demo fixture)
+
+Reason: v0.1.1 routes the Settings entry from the nav rail/bottom bar
+(`apply_nav` over `shell::NavAction`) and pins the screenshot demo to one
+approved fixture (`DEMO_SONG_ID`, `start_player_demo`, `demo_ready` now also
+requires that id, playing state, position > 1500 ms and no pending toast).
+`crates/ui/src/services.rs` did not change for v0.1.1 (`17aab95c…`);
+`app.rs` is now `d6d8f5a1…` (table above).
+
+- `url_route` — unchanged, verbatim: `Video` returns `None`, `Album` with the
+  `MPRE` prefix is the album route, other albums/playlists/artists keep their
+  route and id.
+- `radio_event` / `radio_fallback` — unchanged (`services.rs` untouched).
+- `search_body` / `SearchFilter::params` — unchanged (`innertube/src/lib.rs`
+  untouched at `bfa89ea5…`).
+
+The navigation and demo-screenshot code is out of subset (UI state machine);
+no proven body moved and no proof text changed.

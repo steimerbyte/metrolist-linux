@@ -18,7 +18,9 @@ use crate::LyricsQuery;
 pub const USER_AGENT: &str = concat!(
     "metrolist-linux/",
     env!("CARGO_PKG_VERSION"),
-    " (+https://example.invalid/metrolist-linux)"
+    " (+",
+    env!("CARGO_PKG_REPOSITORY"),
+    ")"
 );
 
 /// Exact duration tolerance, seconds.

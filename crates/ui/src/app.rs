@@ -25,7 +25,7 @@ use crate::screens::{
 };
 use crate::services::{Services, UiEvent};
 use crate::settings_store::SettingsPaths;
-use crate::shell::{self, MiniAction, TopAction};
+use crate::shell::{self, MiniAction, NavAction, TopAction};
 use crate::state::{
     merge_feed, AccountState, BrowseTarget, DownloadsState, FilterChoice, HistoryPending, LibTab,
     LibraryState, Load, LocalPlaylistState, PageData, PageState, PlayerExtras, RecognitionState,
@@ -356,7 +356,7 @@ impl App {
         match demo {
             Some(DemoMode::Player) => {
                 app.player_open = true;
-                app.start_demo();
+                app.start_player_demo();
             }
             Some(DemoMode::Queue) => {
                 app.player_open = true;
@@ -476,17 +476,16 @@ impl App {
         }
     }
 
-    /// CLI demo: one well-known track; the `next` radio queue replaces it with
-    /// full metadata once resolved.
+    /// CLI demo: the only allowed screenshot track. The `next` radio queue
+    /// replaces it with full metadata once resolved.
+    const DEMO_SONG_ID: &str = "oWqnJdGy_84";
+
     fn demo_song() -> Song {
         Song {
-            id: "JGwWNGJdvx8".to_string(),
-            title: "Shape of You".to_string(),
-            artists: vec![ml_core::Artist::new(
-                "Ed Sheeran",
-                Some("UC0C-w0YjGpqDXGB8IHb662A".to_string()),
-            )],
-            duration: Some(234),
+            id: Self::DEMO_SONG_ID.to_string(),
+            title: "Empty Streets".to_string(),
+            artists: vec![ml_core::Artist::new("LONOWN", None)],
+            duration: Some(232),
             ..Song::default()
         }
     }
@@ -495,6 +494,17 @@ impl App {
         let song = Self::demo_song();
         self.radio_for = Some(song.id.clone());
         self.services.play_song(song);
+    }
+
+    /// Player screenshots must not enqueue or play anything besides the one
+    /// approved fixture, so start a single-track queue without radio.
+    fn start_player_demo(&mut self) {
+        // Screenshot playback stays muted; an unmuted null sink can reject the
+        // stream-unmute property and abort the track before it renders.
+        self.muted = true;
+        self.services.set_muted(true);
+        let song = Self::demo_song();
+        self.play_songs(vec![song], 0, QueueSource::List);
     }
 
     fn start_download_demo(&mut self) {
@@ -2331,6 +2341,13 @@ impl App {
         }
     }
 
+    fn apply_nav(&mut self, action: NavAction) {
+        match action {
+            NavAction::Tab(tab) => self.switch_tab(tab),
+            NavAction::Settings => self.navigate(action.route()),
+        }
+    }
+
     fn apply_top(&mut self, action: TopAction) {
         match action {
             TopAction::Back => self.go_back(),
@@ -3102,8 +3119,13 @@ impl App {
                 .exact_size(88.0)
                 .frame(panel_frame)
                 .show(ui, |ui| {
-                    if let Some(tab) = shell::nav_rail(ui, &theme, self.tab) {
-                        self.switch_tab(tab);
+                    if let Some(action) = shell::nav_rail(
+                        ui,
+                        &theme,
+                        shell::active_tab(&self.route, self.tab),
+                        shell::settings_active(&self.route),
+                    ) {
+                        self.apply_nav(action);
                     }
                 });
             Panel::top("wide_top").frame(panel_frame).show(ui, |ui| {
@@ -3173,8 +3195,14 @@ impl App {
                         });
                     }
                     center_column(ui, content_width, |ui| {
-                        if let Some(tab) = shell::bottom_nav(ui, &theme, self.tab, content_width) {
-                            self.switch_tab(tab);
+                        if let Some(action) = shell::bottom_nav(
+                            ui,
+                            &theme,
+                            shell::active_tab(&self.route, self.tab),
+                            shell::settings_active(&self.route),
+                            content_width,
+                        ) {
+                            self.apply_nav(action);
                         }
                     });
                 });
@@ -3322,8 +3350,13 @@ impl App {
                         self.route == Route::Lyrics && self.lyrics.data.is_some()
                     }
                     Some(DemoMode::Player) => {
-                        self.snapshot.current.is_some()
-                            && (self.snapshot.position_ms > 800 || self.playback_error.is_some())
+                        self.snapshot
+                            .current
+                            .as_ref()
+                            .is_some_and(|song| song.id == Self::DEMO_SONG_ID)
+                            && self.snapshot.is_playing()
+                            && self.snapshot.position_ms > 1500
+                            && self.toasts.is_empty()
                     }
                     Some(DemoMode::Queue) => {
                         self.snapshot.current.is_some() && self.services.queue_display().0.len() > 1
@@ -3370,8 +3403,9 @@ impl App {
                 // lands. Demo screens render local fixtures and only need a
                 // couple of frames; waiting longer let occluded windows stall
                 // forever because wgpu stopped delivering frames.
-                let settled =
-                    self.frames >= 6 && (self.demo.is_some() || self.screenshot_idle_frames >= 45);
+                let settled = self.frames >= 6
+                    && demo_ready
+                    && (self.demo.is_some() || self.screenshot_idle_frames >= 45);
                 if !self.screenshot_requested && (settled || self.frames >= 360) {
                     self.screenshot_requested = true;
                     self.screenshot_frame = self.frames;

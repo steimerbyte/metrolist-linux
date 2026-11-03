@@ -9,18 +9,19 @@
 - For AppImage: Docker (for the glibc-floor build), `curl`, and
   `desktop-file-utils` (optional validation).
 - No Android SDK, NDK, Gradle, or emulator is used.
-- Compilation is pinned to **one CPU core** by default. The tracked
-  `.cargo/config.toml.example` sets `[build] jobs = 1`; copy it to
+- Compilation is capped at **2 CPU cores / 2 `rustc` processes project-wide**.
+  The tracked `.cargo/config.toml.example` sets `[build] jobs = 2`; copy it to
   `.cargo/config.toml` (gitignored) for a local build. The maintainer's host
   config adds a `rustc-wrapper` — an **absolute** path to
-  `scripts/rustc-single.sh`, which takes a global `flock` on
-  `~/.cache/metrolist-rustc.lock`, so concurrent cargo runs (even with separate
-  `CARGO_TARGET_DIR`s) never run two `rustc` processes at once.
+  `scripts/rustc-single.sh`, a 2-slot `flock` semaphore
+  (`~/.cache/metrolist-rustc-slots/{1,2}.lock`) — so concurrent cargo runs,
+  including those with separate `CARGO_TARGET_DIR`s, never exceed two `rustc`
+  processes at once.
 - No wrapper path is committed: cargo requires an absolute path for
   `rustc-wrapper`, so a committed value would break every other checkout. CI
-  sets `CARGO_BUILD_JOBS=1` and may set `RUSTC_WRAPPER` to the repo script.
-  Only `RUSTC_WRAPPER=""` disables the cap; that is not to be used for
-  shared/project builds.
+  sets `CARGO_BUILD_JOBS=1` (2 is allowed, never more) and may set
+  `RUSTC_WRAPPER` to the repo script. Only `RUSTC_WRAPPER=""` disables the cap;
+  that is not to be used for shared/project builds.
 
 ## Local build (development only)
 
@@ -55,23 +56,26 @@ dist/Metrolist-Desktop-<version>-x86_64.AppImage
 dist/SHA256SUMS
 ```
 
-## Validated artifact (2026-11-02)
+## Validated artifact (2026-11-03)
 
 ```text
-dist/Metrolist-Desktop-0.1.0-x86_64.AppImage
+dist/Metrolist-Desktop-0.1.1-x86_64.AppImage
 size:   120732152 bytes
-sha256: b4b493874982982c7c4f8a7d81b20f4626865ae91e094111a610484dafc088ba
+sha256: 01b40cf28fc68819973ea8885903591ba0aa32af84158dff65e223d01e4da34e
 app:    max GLIBC_2.35 (container build)
 mpv:    0.35.1, max GLIBC_2.34
 ```
 
 Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (246 files, self-sha
-`42e7c399…`, `sha256sum -c` passes) in `rust:1.99.1-bookworm`; the shipped
+`345a3ebb…`, `sha256sum -c` passes) in `rust:1.99.1-bookworm`; the shipped
 container binary is `build/target-container/release/metrolist`, sha256
-`ff8cfa9186008a9b12f8997c1d07e90b7df10148093aa4e5eb50980a44ff24c3`
-(61,012,744 bytes). The host binary is only a local reference and has a newer
+`d10f6fd445354d444ced7384dafab488d0a180c20c3e31703f06f6e82bf7547d`
+(61,002,632 bytes). The host binary is only a local reference and has a newer
 GLIBC floor. `dist/SNAPSHOT.txt` records the checks, mpv bundle and runtime
 dependencies.
+
+The 0.1.0 build (`b4b49387…`, container `ff8cfa91…`) stays recorded at tag
+`v0.1.0`; it is superseded and not rebuilt.
 
 Equivalent explicit commands:
 

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use eframe::egui::{self, Align, Color32, Layout, Sense, Ui, Vec2};
-use ml_audio::SleepTimer;
+use ml_audio::{AudioDevice, SleepTimer};
 use ml_core::{AudioQuality, LyricsSettings, Settings, ThemeMode};
 
 use crate::desktop::DesktopStatus;
@@ -21,6 +21,43 @@ use crate::theme::{
 use crate::widgets::{chip, outlined_button, slider};
 
 use super::measured_column;
+
+/// Concrete outputs only: `auto` is the same choice as the Automatic row.
+fn concrete_devices(devices: &[AudioDevice]) -> impl Iterator<Item = &AudioDevice> {
+    devices
+        .iter()
+        .filter(|device| !device.id.eq_ignore_ascii_case("auto"))
+}
+
+/// Row label for a concrete output device. mpv already labels its per-backend
+/// default "Default (pipewire)", so appending another "(default)" is noise.
+fn device_label(device: &AudioDevice) -> String {
+    if device.is_default && !device.description.to_ascii_lowercase().contains("default") {
+        format!("{} (default)", device.description)
+    } else {
+        device.description.clone()
+    }
+}
+
+/// Effective output line under the device list. `None`/`auto` follows the
+/// system default; a stored id missing from the list means the engine fell
+/// back, which the user must see instead of a silent HDMI route.
+fn device_status(selected: Option<&str>, devices: &[AudioDevice]) -> (String, bool) {
+    let selected = selected.filter(|id| !id.eq_ignore_ascii_case("auto"));
+    match selected {
+        None => (
+            "Playing through the system default output.".to_string(),
+            false,
+        ),
+        Some(id) => match devices.iter().find(|device| device.id == id) {
+            Some(device) => (format!("Playing through {}.", device.description), false),
+            None => (
+                "Selected output is unavailable; playback uses the system default.".to_string(),
+                true,
+            ),
+        },
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingsAction {
@@ -442,8 +479,9 @@ pub fn show(
             }
         });
     } else if let Some(devices) = extras.devices.data.as_ref() {
+        let concrete = concrete_devices(devices).count();
         let list_width = ui.available_width();
-        let list_height = (((devices.len() + 1) as f32) * 42.0 + DP8).clamp(80.0, 280.0);
+        let list_height = (((concrete + 1) as f32) * 42.0 + DP8).clamp(80.0, 280.0);
         // The outer settings page is itself a scroll area, so a bare nested
         // ScrollArea gets clipped to the remaining page height. Allocate the
         // list explicitly and keep its own viewport fixed.
@@ -474,16 +512,12 @@ pub fn show(
                         if auto.clicked() {
                             actions.push(SettingsAction::DeviceChanged(None));
                         }
-                        for device in devices {
+                        for device in concrete_devices(devices) {
                             let selected = extras.device.as_deref() == Some(device.id.as_str());
-                            let label = if device.is_default {
-                                format!("{} (default)", device.description)
-                            } else {
-                                device.description.clone()
-                            };
                             let row = ui.add(
                                 egui::Button::new(
-                                    egui::RichText::new(label).font(regular_font(13.0)),
+                                    egui::RichText::new(device_label(device))
+                                        .font(regular_font(13.0)),
                                 )
                                 .selected(selected)
                                 .wrap()
@@ -497,6 +531,12 @@ pub fn show(
                     });
             },
         );
+        let (status, unavailable) = device_status(extras.device.as_deref(), devices);
+        let mut text = egui::RichText::new(status).font(regular_font(12.0));
+        if unavailable {
+            text = text.color(theme.scheme.error);
+        }
+        ui.label(text);
         if outlined_button(ui, theme, "Refresh").clicked() {
             actions.push(SettingsAction::ListDevices);
         }
@@ -1360,5 +1400,70 @@ mod tests {
             );
             assert!(actions.is_empty(), "error at {width}: {actions:?}");
         }
+    }
+
+    fn device(id: &str, description: &str, is_default: bool) -> AudioDevice {
+        AudioDevice {
+            id: id.to_string(),
+            description: description.to_string(),
+            is_default,
+        }
+    }
+
+    #[test]
+    fn device_rows_skip_the_auto_pseudo_device() {
+        let devices = vec![
+            device("auto", "Autoselect device", false),
+            device("pipewire", "Default (pipewire)", true),
+            device("pipewire/speakers", "Speakers", false),
+        ];
+        let concrete: Vec<&str> = concrete_devices(&devices).map(|d| d.id.as_str()).collect();
+        assert_eq!(concrete, vec!["pipewire", "pipewire/speakers"]);
+    }
+
+    #[test]
+    fn device_labels_do_not_repeat_the_default_marker() {
+        assert_eq!(
+            device_label(&device("pipewire", "Default (pipewire)", true)),
+            "Default (pipewire)"
+        );
+        assert_eq!(
+            device_label(&device("pipewire/speakers", "Speakers", true)),
+            "Speakers (default)"
+        );
+        assert_eq!(
+            device_label(&device("pipewire/speakers", "Speakers", false)),
+            "Speakers"
+        );
+    }
+
+    #[test]
+    fn device_status_names_the_effective_output_and_flags_missing_ones() {
+        let devices = vec![device("pipewire/speakers", "Speakers", false)];
+        assert_eq!(
+            device_status(None, &devices),
+            (
+                "Playing through the system default output.".to_string(),
+                false
+            )
+        );
+        assert_eq!(
+            device_status(Some("auto"), &devices),
+            (
+                "Playing through the system default output.".to_string(),
+                false
+            )
+        );
+        assert_eq!(
+            device_status(Some("pipewire/speakers"), &devices),
+            ("Playing through Speakers.".to_string(), false)
+        );
+        assert_eq!(
+            device_status(Some("pipewire/gone"), &devices),
+            (
+                "Selected output is unavailable; playback uses the system default.".to_string(),
+                true
+            )
+        );
     }
 }

@@ -1,8 +1,11 @@
-# Copy to .cargo/config.toml for a single-core local build.
+# Copy to .cargo/config.toml for a local build.
 #
-# No rustc-wrapper is committed: a wrapper needs an absolute path, so it is
-# host-specific. The maintainer's host config adds
+# Max 2 rustc processes project-wide. Set jobs = 2 and, for concurrency across
+# separate target dirs, add the 2-slot semaphore wrapper as an ABSOLUTE path
+# (cargo requires absolute; a relative one breaks other checkouts):
+#
 #   rustc-wrapper = "/absolute/path/to/metrolist-linux/scripts/rustc-single.sh"
-# which flocks every rustc invocation project-wide.
+#
+# Never raise CARGO_BUILD_JOBS above 2.
 [build]
-jobs = 1
+jobs = 2

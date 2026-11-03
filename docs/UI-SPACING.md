@@ -1,7 +1,8 @@
 # UI spacing & density
 
-Spacing-only pass over the Material 3 egui shell. No behaviour, navigation,
-colour or type changes.
+Spacing-only pass over the Material 3 egui shell. The original pass made no
+behaviour, navigation, colour or type changes; the Settings entry noted under
+Shell is a later navigation addition.
 
 ## Method
 
@@ -94,6 +95,11 @@ so ink starts on the 16 dp page margin (section header ink: 4 → 16 px).
   thumbnails, then centre-crops to the target aspect. Before: 20 pure-black rows
   at the art centre (letterbox inside the square); after: 0. Unit-tested.
 - **UI-06** — see action rows above.
+- **Settings entry** — the wide rail pins a utility Settings item to the bottom
+  under an inset divider; compact uses a fifth bottom-nav item after a vertical
+  divider. Both use the existing 72 dp nav item geometry and label, highlight
+  Settings when `Route::Settings` is open, and suppress the primary-tab
+  highlight. The compact five-item row is 74.6 dp per item at 405 px.
 - **UI-10 toasts** — identical texts refresh the visible toast instead of
   stacking, and the anchor moved from 100 to 152 dp above the bottom edge, so
   the toast ends 8–16 dp above the mini player instead of overlapping it.

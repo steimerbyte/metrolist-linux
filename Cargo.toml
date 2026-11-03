@@ -14,11 +14,11 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.99"
 license = "GPL-3.0-only"
-repository = "https://example.invalid/metrolist-linux"
+repository = "https://github.com/steimerbyte/metrolist-linux"
 authors = ["Metrolist Linux contributors"]
 
 [workspace.dependencies]

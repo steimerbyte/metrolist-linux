@@ -1,12 +1,14 @@
-# Release check — 2026-11-02
+# Release check — 2026-11-03
 
 Release gate for the Rust port (repo root; run every command from there).
 Verdict: **RELEASE READY**.
 
-- Toolchain: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`, edition 2021, GPL-3.0-only.
+- Toolchain: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`, edition 2021, GPL-3.0-only,
+  workspace version `0.1.1`.
 - Workspace: `crates/{core,innertube,lyrics,store,downloads,audio,integrations,ui}`,
   binary `metrolist` (`crates/ui/src/main.rs`).
-- The tree described here is the published source of the v0.1.0 release.
+- The tree described here is the published source of the v0.1.1 release
+  (v0.1.0 remains published at tag `v0.1.0`).
 
 ## Gate commands
 
@@ -14,7 +16,7 @@ Verdict: **RELEASE READY**.
 |---|---|
 | `cargo fmt --all -- --check` | pass (no diff) |
 | `cargo check --workspace --locked` | pass |
-| `cargo test --workspace --no-fail-fast` | pass — **702 passed, 0 failed, 30 ignored** (re-measured after the shutdown/leak fix) |
+| `cargo test --workspace --no-fail-fast` | pass — **715 passed, 0 failed, 30 ignored** (re-measured for v0.1.1) |
 | `cargo clippy --workspace --all-targets --locked` | pass (exit 0) — 17 distinct warning sites, all in `ml-ui` (clippy summary: 14 lib + 15 lib test, 13 duplicated), listed below |
 | `cargo build --release --locked` | pass |
 | `target/release/metrolist --smoke 120` | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` — exit 0 |
@@ -29,8 +31,8 @@ on this host `DISPLAY=:0`, `WAYLAND_DISPLAY=wayland-0`, wgpu backend Vulkan on
 
 Counts are from `cargo test -p <package> --locked` on the earlier 313-test
 revision; the workspace-wide re-measurement after the shutdown/leak fix is
-**702 passed / 0 failed / 30 ignored** (the per-package split below was not
-re-measured and is informational only).
+**715 passed / 0 failed / 30 ignored** for v0.1.1 (the per-package split below
+was not re-measured and is informational only).
 
 | Package | Binaries | Passed | Failed | Ignored |
 |---|---|---|---|---|
@@ -58,41 +60,73 @@ Host reference binary, built 14:05 from an **earlier** revision on CachyOS
 - `sha256sum target/release/metrolist`:
   `d2ee934fc1872a491c43a9293f0f416da38b94955d4f1b4a539624efe63b5aee`
 
-The shipped container build is
-`build/target-container/release/metrolist`: 61,012,744 bytes, sha256
-`ff8cfa9186008a9b12f8997c1d07e90b7df10148093aa4e5eb50980a44ff24c3`.
+The shipped container build for 0.1.1 is
+`build/target-container/release/metrolist`: 61,002,632 bytes, sha256
+`d10f6fd445354d444ced7384dafab488d0a180c20c3e31703f06f6e82bf7547d`.
 
 ## Shipped artifact
 
 The AppImage is the container build from the tree frozen in
-`docs/SOURCE-FREEZE.sha256` (246 files, `sha256sum -c` passes), recorded in
-`dist/SNAPSHOT.txt` and `docs/BUILD.md`:
+`docs/SOURCE-FREEZE.sha256` (246 files, self-sha256 `345a3ebb…`,
+`sha256sum -c` passes), recorded in `dist/SNAPSHOT.txt` and `docs/BUILD.md`:
 
 ```text
-dist/Metrolist-Desktop-0.1.0-x86_64.AppImage
+dist/Metrolist-Desktop-0.1.1-x86_64.AppImage
 size:   120732152 bytes (115.1 MiB)
-sha256: b4b493874982982c7c4f8a7d81b20f4626865ae91e094111a610484dafc088ba
+sha256: 01b40cf28fc68819973ea8885903591ba0aa32af84158dff65e223d01e4da34e
 app:    max GLIBC_2.35   mpv 0.35.1, max GLIBC_2.34
 ```
 
 `sha256sum -c dist/SHA256SUMS` passes. Do not publish the host binary: it needs
 a newer glibc than the AppImage's Debian 12 / Ubuntu 24.04 floor.
 
-Release verification of this exact file (also installed at
+For the record, v0.1.0 (tag `v0.1.0`, commit `cc2428b`) shipped
+`Metrolist-Desktop-0.1.0-x86_64.AppImage`, 120,732,152 bytes, sha256
+`b4b493874982982c7c4f8a7d81b20f4626865ae91e094111a610484dafc088ba`; it is
+superseded by 0.1.1 and not rebuilt.
+
+Release verification of this 0.1.1 file (also installed at
 `~/AppImages/metrolist_desktop.appimage`, mode 755, same size and sha256):
 
 - Clean environment, Wayland: `--appimage-extract-and-run --smoke 120` →
-  `SMOKE_OK frames=120 backend=Vulkan home_sections=2`; screenshot 405×900.
-- Playback through the bundled, muted mpv over JSON IPC: `mute=yes volume=0
-  ao=null`, opus, position 3.956/3600.02 s.
+  `SMOKE_OK frames=120 backend=Vulkan home_sections=2`; vinyl player screenshot
+  and Settings at 405/1100.
+- Audio mute fix: a seeded WirePlumber stream mute is cleared by the engine
+  (the v0.1.0 control stayed muted in the same harness); an explicit user
+  "test mute" still mutes.
+- Click stutter: selecting the already-current queue entry no longer reloads
+  the stream.
 - Leak checks: 0 mpv processes, 0 engine sockets, 0 instance socket after
-  smoke, screenshot and SIGTERM (exit in 68 ms); SIGKILL leaves 0 children and
-  the next launch sweeps stale sockets.
-- Tests: `cargo test --workspace --no-fail-fast` → 702 passed / 0 failed /
-  30 ignored. Proofs: 12 pairs, 274 functions verified, 0 errors (freeze
-  `a561191c…`, gate `7a9f0f1f…`).
+  smoke and SIGTERM; SIGKILL leaves 0 children and the next launch sweeps
+  stale sockets.
+- Tests: `cargo test --workspace --no-fail-fast` → 715 passed / 0 failed /
+  30 ignored. Proofs: 12 pairs, 277 functions verified, 0 errors (freeze
+  `1a07e2b5…`, gate `9ce7fb1a…`, audio 12 → 15 functions).
 
-## Source changes made by this release check
+## Changes in 0.1.1
+
+- **Audio unmute** (`crates/audio/src/engine.rs`, `controller.rs`): the engine
+  no longer inherits a stale per-stream WirePlumber/session mute; it sets its
+  own unmuted stream state. A seeded-mute harness that stayed silent on 0.1.0
+  plays on 0.1.1, while the explicit user "test mute" still mutes.
+- **Click stutter** (`crates/audio/src/controller.rs`): selecting the queue
+  entry that is already current no longer reloads the stream.
+- **Settings navigation** (`crates/ui/src/shell/mod.rs`,
+  `crates/ui/src/screens/settings.rs`): Settings is reachable from the sidebar
+  and the compact bottom nav, with a dedicated audio page.
+- **Vinyl player** (`crates/ui/src/screens/player.rs`,
+  `crates/ui/src/widgets/mod.rs`): rotating circular vinyl built from the
+  artwork.
+- **Build cap** (`scripts/rustc-single.sh`, `.cargo/config.toml.example`):
+  rustc limited to 2 concurrent processes (`jobs = 2` plus a 2-slot semaphore).
+- Proofs extended for the audio change: 12 pairs, 277 functions (audio 12 → 15).
+
+After these changes: `cargo fmt --all -- --check`, `cargo clippy --workspace
+--all-targets --locked`, `cargo test --workspace --locked` (715/0/30),
+`cargo build --release --locked`, `--smoke 120` and `check-drift.sh` were re-run
+with the results above.
+
+## Source changes made by the v0.1.0 release check
 
 Both are release-blocking integration fixes; no features, no refactors.
 
@@ -181,7 +215,7 @@ and fake literals in its test module (`SAPISID=session`, `SAPISID=abc`,
 `docs/SOURCE-FREEZE.sha256` — 246 sorted `sha256sum` lines covering every file
 under `crates/` plus root `Cargo.toml` and `Cargo.lock`
 (`sha256sum docs/SOURCE-FREEZE.sha256` =
-`42e7c399433d0ed9310dec3cca4202fc1ebc6dbc8cd36bb8d2eb088fb3355b68`).
+`345a3ebb21a15064ca99c1cbbc77c8bbc94f53a8c672b2ecd3dd9a80eebb0485`).
 This manifest is for packaging provenance, not the Verus/proof freeze in
 `proofs/FREEZE.sha256`.
 

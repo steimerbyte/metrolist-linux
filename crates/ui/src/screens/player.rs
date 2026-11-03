@@ -4,10 +4,10 @@ use eframe::egui::{
     self, Align, Color32, Layout, Pos2, Rect, Sense, TextureHandle, Ui, Vec2, WidgetInfo,
 };
 
+use crate::pure::advance_vinyl_angle;
 use crate::theme::{bold_font, medium_font, regular_font, Theme, DP12, DP16, DP4, DP8, TOUCH};
 use crate::widgets::{
-    art_or_placeholder, filled_icon_button, icon_button, icon_button_at, paint_icon, slider,
-    text_width,
+    filled_icon_button, icon_button, icon_button_at, paint_icon, slider, text_width, vinyl_disc,
 };
 use ml_core::{format_position, PlaybackStatus, RepeatMode, Song};
 
@@ -191,10 +191,27 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         .min(380.0)
         .min((available_height * 0.48).max(140.0))
         .max(120.0);
+    let spinning = view.playing && view.status == PlaybackStatus::Playing;
+    let dt = ui.input(|input| input.stable_dt);
+    let vinyl_angle = ui.data_mut(|data| {
+        let state = data.get_temp_mut_or_insert_with::<VinylState>(
+            egui::Id::unique("player_vinyl_state"),
+            || VinylState::new(&song.id),
+        );
+        state.step(&song.id, spinning, dt);
+        state.angle
+    });
+    if spinning {
+        ui.ctx().request_repaint();
+    }
     ui.add_space(DP4);
     ui.vertical_centered(|ui| {
-        let (art_rect, _) = ui.allocate_exact_size(Vec2::splat(art_size), Sense::hover());
-        art_or_placeholder(ui, app_theme, view.texture, art_rect, 12);
+        let (art_rect, art_response) =
+            ui.allocate_exact_size(Vec2::splat(art_size), Sense::hover());
+        art_response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "Album art"));
+        art_response.on_hover_text("Album art");
+        vinyl_disc(ui, app_theme, view.texture, art_rect, vinyl_angle);
         ui.add_space(DP16);
         ui.add(
             egui::Label::new(
@@ -268,71 +285,88 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         );
         ui.add_space(DP8);
 
-        // Three controls sit left of the play button and two right of it; the
-        // trailing spacer keeps the button on the art's centre line.
-        let total = TOUCH * 6.0 + 64.0 + DP8 * 6.0;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = DP8;
-            ui.add_space(((width - total) / 2.0).max(0.0));
-            if like_button(ui, app_theme, view.liked).clicked() {
-                action = PlayerAction::ToggleLike;
-            }
-            let shuffle =
-                icon_button(ui, app_theme, "shuffle", "Shuffle", 22.0).on_hover_text("Shuffle (S)");
-            if view.shuffle {
-                ui.painter().circle_filled(
-                    Pos2::new(shuffle.rect.center().x, shuffle.rect.bottom() - 2.0),
-                    2.0,
-                    app_theme.scheme.primary,
-                );
-            }
-            if shuffle.clicked() {
-                action = PlayerAction::ToggleShuffle;
-            }
-            let previous = icon_button(ui, app_theme, "skip_previous", "Previous", 26.0)
-                .on_hover_text("Previous");
-            if previous.clicked() {
-                action = PlayerAction::Previous;
-            }
-            let toggle = filled_icon_button(
-                ui,
-                app_theme,
-                if view.playing { "pause" } else { "play_arrow" },
-                if view.playing { "Pause" } else { "Play" },
-                64.0,
-            )
-            .on_hover_text("Play/Pause (Space)");
-            if toggle.clicked() {
-                action = PlayerAction::TogglePlay;
-            }
-            let next = icon_button(ui, app_theme, "skip_next", "Next", 26.0).on_hover_text("Next");
-            if next.clicked() {
-                action = PlayerAction::Next;
-            }
-            let repeat_icon = if view.repeat == RepeatMode::One {
-                "repeat_one"
-            } else {
-                "repeat"
-            };
-            let repeat_label = match view.repeat {
-                RepeatMode::Off => "Repeat off",
-                RepeatMode::All => "Repeat all",
-                RepeatMode::One => "Repeat one",
-            };
-            let repeat = icon_button(ui, app_theme, repeat_icon, repeat_label, 22.0)
-                .on_hover_text("Repeat (R)");
-            if view.repeat != RepeatMode::Off {
-                ui.painter().circle_filled(
-                    Pos2::new(repeat.rect.center().x, repeat.rect.bottom() - 2.0),
-                    2.0,
-                    app_theme.scheme.primary,
-                );
-            }
-            if repeat.clicked() {
-                action = PlayerAction::CycleRepeat;
-            }
-            ui.add_space(TOUCH);
-        });
+        // Six equal icon slots surround the wider play button. The slot width
+        // is derived from the available width, capped to keep the cluster tight
+        // on wide windows. The fixed 64 dp row height is what keeps the 40 dp
+        // icons vertically centred once the play button expands the row.
+        let (leading, slot) = transport_geometry(width);
+        ui.allocate_ui_with_layout(
+            Vec2::new(width, 64.0),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.add_space(leading);
+                let like =
+                    transport_slot(ui, slot, TOUCH, |ui| like_button(ui, app_theme, view.liked));
+                if like.clicked() {
+                    action = PlayerAction::ToggleLike;
+                }
+                let shuffle = transport_slot(ui, slot, TOUCH, |ui| {
+                    icon_button(ui, app_theme, "shuffle", "Shuffle", 22.0)
+                        .on_hover_text("Shuffle (S)")
+                });
+                if view.shuffle {
+                    ui.painter().circle_filled(
+                        Pos2::new(shuffle.rect.center().x, shuffle.rect.bottom() - 2.0),
+                        2.0,
+                        app_theme.scheme.primary,
+                    );
+                }
+                if shuffle.clicked() {
+                    action = PlayerAction::ToggleShuffle;
+                }
+                let previous = transport_slot(ui, slot, TOUCH, |ui| {
+                    icon_button(ui, app_theme, "skip_previous", "Previous", 26.0)
+                        .on_hover_text("Previous")
+                });
+                if previous.clicked() {
+                    action = PlayerAction::Previous;
+                }
+                let toggle = transport_slot(ui, 64.0, 64.0, |ui| {
+                    filled_icon_button(
+                        ui,
+                        app_theme,
+                        if view.playing { "pause" } else { "play_arrow" },
+                        if view.playing { "Pause" } else { "Play" },
+                        64.0,
+                    )
+                    .on_hover_text("Play/Pause (Space)")
+                });
+                if toggle.clicked() {
+                    action = PlayerAction::TogglePlay;
+                }
+                let next = transport_slot(ui, slot, TOUCH, |ui| {
+                    icon_button(ui, app_theme, "skip_next", "Next", 26.0).on_hover_text("Next")
+                });
+                if next.clicked() {
+                    action = PlayerAction::Next;
+                }
+                let repeat_icon = if view.repeat == RepeatMode::One {
+                    "repeat_one"
+                } else {
+                    "repeat"
+                };
+                let repeat_label = match view.repeat {
+                    RepeatMode::Off => "Repeat off",
+                    RepeatMode::All => "Repeat all",
+                    RepeatMode::One => "Repeat one",
+                };
+                let repeat = transport_slot(ui, slot, TOUCH, |ui| {
+                    icon_button(ui, app_theme, repeat_icon, repeat_label, 22.0)
+                        .on_hover_text("Repeat (R)")
+                });
+                if view.repeat != RepeatMode::Off {
+                    ui.painter().circle_filled(
+                        Pos2::new(repeat.rect.center().x, repeat.rect.bottom() - 2.0),
+                        2.0,
+                        app_theme.scheme.primary,
+                    );
+                }
+                if repeat.clicked() {
+                    action = PlayerAction::CycleRepeat;
+                }
+            },
+        );
 
         let status = match view.status {
             PlaybackStatus::Loading => Some("Loading stream…"),
@@ -388,6 +422,34 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
     action
 }
 
+/// Leading margin and icon-slot width for the transport row. The six icon
+/// slots plus the 64 dp play cell are centred, so the play button always lands
+/// on the art's centre line without absolute button positions.
+fn transport_geometry(width: f32) -> (f32, f32) {
+    let transport_width = width.min(360.0);
+    let slot = ((transport_width - 64.0) / 6.0).max(0.0);
+    (((width - transport_width) * 0.5).max(0.0), slot)
+}
+
+/// One transport cell. The cell height is fixed so every control shares a
+/// centre line; content is centred inside its slot without absolute x offsets.
+fn transport_slot<R>(
+    ui: &mut Ui,
+    slot_width: f32,
+    content_width: f32,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    ui.allocate_ui_with_layout(
+        Vec2::new(slot_width, 64.0),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.add_space(((slot_width - content_width) * 0.5).max(0.0));
+            add(ui)
+        },
+    )
+    .inner
+}
+
 fn like_button(ui: &mut Ui, app_theme: &Theme, liked: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(TOUCH), Sense::click());
     if response.hovered() {
@@ -408,4 +470,139 @@ fn like_button(ui: &mut Ui, app_theme: &Theme, liked: bool) -> egui::Response {
     response
         .widget_info(|| WidgetInfo::selected(egui::Role::Button, true, liked, "Like this song"));
     response
+}
+
+#[derive(Clone, Debug)]
+struct VinylState {
+    song_id: String,
+    angle: f32,
+}
+
+impl VinylState {
+    fn new(song_id: &str) -> Self {
+        Self {
+            song_id: song_id.to_owned(),
+            angle: 0.0,
+        }
+    }
+
+    fn step(&mut self, song_id: &str, playing: bool, dt: f32) {
+        if self.song_id != song_id {
+            self.song_id.clear();
+            self.song_id.push_str(song_id);
+            self.angle = 0.0;
+            return;
+        }
+        self.angle = advance_vinyl_angle(self.angle, dt, playing);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pure::{wrap_vinyl_angle, VINYL_RADIANS_PER_SEC};
+    use crate::theme::Theme as TestTheme;
+    use eframe::egui::{CentralPanel, Context, RawInput, Shape};
+    use ml_core::Settings;
+
+    #[test]
+    fn vinyl_angle_wraps_clamps_freezes_and_resets_on_song_change() {
+        let tau = std::f32::consts::TAU;
+        let wrapped = wrap_vinyl_angle(tau + 0.5);
+        assert!((0.0..tau).contains(&wrapped));
+        assert!((wrapped - 0.5).abs() < 1e-5);
+        let negative = wrap_vinyl_angle(-0.5);
+        assert!((0.0..tau).contains(&negative));
+        assert!((negative - (tau - 0.5)).abs() < 1e-5);
+
+        let one_step = advance_vinyl_angle(0.0, 0.05, true);
+        assert!((one_step - 0.05 * VINYL_RADIANS_PER_SEC).abs() < 1e-5);
+        let clamped = advance_vinyl_angle(0.0, 10.0, true);
+        assert!((clamped - one_step).abs() < 1e-5);
+        let frozen = advance_vinyl_angle(1.2, 1.0, false);
+        assert!((frozen - 1.2).abs() < 1e-6);
+
+        let mut state = VinylState::new("song-a");
+        state.step("song-a", true, 0.05);
+        let before = state.angle;
+        assert!(before > 0.0);
+        state.step("song-a", false, 1.0);
+        assert_eq!(state.angle, before);
+        state.step("song-b", true, 0.05);
+        assert_eq!(state.angle, 0.0);
+        assert_eq!(state.song_id, "song-b");
+    }
+
+    #[test]
+    fn vinyl_disc_renders_with_and_without_texture() {
+        let ctx = Context::default();
+        let theme = TestTheme::from_settings(&Settings::default());
+        let texture = ctx.load_texture(
+            "vinyl-test-cover",
+            egui::ColorImage::filled([8, 8], Color32::from_rgb(90, 40, 120)),
+            egui::TextureOptions::NEAREST,
+        );
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(405.0, 900.0))),
+            ..RawInput::default()
+        };
+        let mut painted = 0;
+        let mut output = ctx.run_ui(input, |ctx| {
+            CentralPanel::default().show(ctx, |ui| {
+                vinyl_disc(
+                    ui,
+                    &theme,
+                    None,
+                    Rect::from_min_size(Pos2::new(16.0, 16.0), Vec2::splat(160.0)),
+                    0.0,
+                );
+                vinyl_disc(
+                    ui,
+                    &theme,
+                    Some(&texture),
+                    Rect::from_min_size(Pos2::new(16.0, 200.0), Vec2::splat(160.0)),
+                    0.37,
+                );
+                painted += 2;
+            });
+        });
+        output.textures_delta.clear();
+        assert_eq!(painted, 2);
+        let mesh = output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                Shape::Mesh(mesh) => Some(mesh),
+                _ => None,
+            })
+            .expect("textured disc should paint a mesh");
+        assert_eq!(
+            mesh.vertices.len(),
+            98,
+            "centre vertex plus a 96-segment ring"
+        );
+        assert_eq!(mesh.indices.len(), 96 * 3, "one triangle per ring segment");
+        assert!(
+            mesh.vertices
+                .iter()
+                .all(|vertex| (0.0..=1.0).contains(&vertex.uv.x)
+                    && (0.0..=1.0).contains(&vertex.uv.y)),
+            "the circular fan must stay inside the texture"
+        );
+    }
+
+    #[test]
+    fn transport_slots_keep_play_centred_at_every_width() {
+        for width in [320.0, 373.0, 405.0, 560.0, 1100.0] {
+            let (leading, slot) = transport_geometry(width);
+            assert!(leading >= 0.0);
+            assert!(slot >= TOUCH, "slot {slot} too narrow at {width}");
+            let play_center = leading + slot * 3.0 + 32.0;
+            assert!(
+                (play_center - width * 0.5).abs() < 0.01,
+                "play centre {play_center} != {} at {width}",
+                width * 0.5
+            );
+        }
+    }
 }

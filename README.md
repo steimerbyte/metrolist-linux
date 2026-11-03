@@ -49,7 +49,7 @@ N/A), with the exact evidence for each row and the limits of every partial.
 
 Captured from the running app with `--screenshot` (see *CI / capture modes*)
 against demo data, signed out. Each thumbnail links to the full-resolution
-1100×760 frame.
+frame (1100×760, or 405×900 where noted).
 
 | | | | |
 |---|---|---|---|
@@ -59,6 +59,8 @@ against demo data, signed out. Each thumbnail links to the full-resolution
 | Podcasts | Stats | Wrapped | Recognition |
 | [<img src="docs/ui-together-1100.png" width="200" alt="Listen together">](docs/ui-together-1100.png) | [<img src="docs/ui-integrations-1100.png" width="200" alt="Integrations">](docs/ui-integrations-1100.png) | [<img src="docs/ui-settings-audio-1100.png" width="200" alt="Settings, audio">](docs/ui-settings-audio-1100.png) | [<img src="docs/ui-account-1100.png" width="200" alt="Account">](docs/ui-account-1100.png) |
 | Listen together | Integrations | Settings (audio) | Account (signed out) |
+| [<img src="docs/ui-player-vinyl-405.png" width="200" alt="Vinyl player">](docs/ui-player-vinyl-405.png) | [<img src="docs/ui-sidebar-settings-405.png" width="200" alt="Settings in the navigation">](docs/ui-sidebar-settings-405.png) | | |
+| Vinyl player (405×900) | Settings via nav (405×900) | | |
 
 ## Status
 
@@ -81,27 +83,42 @@ interfaces and per-workstream ownership.
 
 ## AppImage
 
-`dist/Metrolist-Desktop-0.1.0-x86_64.AppImage` — 120,732,152 bytes (115.1 MiB),
+`dist/Metrolist-Desktop-0.1.1-x86_64.AppImage` — 120,732,152 bytes (115.1 MiB),
 AppImage type 2 (runtime commit `fedfad5`), built in `rust:1.99.1-bookworm`
 from the frozen tree in `docs/SOURCE-FREEZE.sha256` (246 files, self-sha256
-`42e7c399…`).
+`345a3ebb…`). Published as
+[v0.1.1](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.1).
 
 ```text
-sha256  b4b493874982982c7c4f8a7d81b20f4626865ae91e094111a610484dafc088ba
+sha256  01b40cf28fc68819973ea8885903591ba0aa32af84158dff65e223d01e4da34e
 ```
 
 ```sh
 cd dist && sha256sum -c SHA256SUMS
-# Metrolist-Desktop-0.1.0-x86_64.AppImage: OK
+# Metrolist-Desktop-0.1.1-x86_64.AppImage: OK
 ```
 
 ```sh
 chmod +x dist/Metrolist-Desktop-*-x86_64.AppImage
 ./dist/Metrolist-Desktop-*-x86_64.AppImage
 # or install it for the desktop (the layout used for release verification):
-mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.0-x86_64.AppImage \
+mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.1-x86_64.AppImage \
   ~/AppImages/metrolist_desktop.appimage && chmod 755 ~/AppImages/metrolist_desktop.appimage
 ```
+
+### What changed in 0.1.1
+
+- **Audio**: playback no longer starts muted because of a stale per-stream
+  WirePlumber/session mute; the engine sets its own unmuted stream state. The
+  v0.1.0 control stayed muted in the same test, the user "test mute" path still
+  mutes on request.
+- **Click stutter**: picking the entry that is already playing no longer
+  reloads the stream (no gap on the current queue entry).
+- **Settings** live in the sidebar (and the compact bottom nav), with a
+  dedicated audio page instead of one long scrolling list.
+- **Player**: rotating circular vinyl built from the artwork.
+- **Build**: rustc capped at 2 concurrent processes (`.cargo/config.toml.example`
+  sets `jobs = 2`, `scripts/rustc-single.sh` is a 2-slot semaphore).
 
 AppImage type 2 normally needs FUSE. Without it:
 
@@ -127,17 +144,18 @@ dependency details are in `docs/BUILD.md` and `packaging/README.md`.
 
 | Check | Result |
 |---|---|
-| `cargo test --workspace --no-fail-fast` | **702 passed, 0 failed, 30 ignored** |
-| Verus proofs (`proofs/run-gates.sh`) | **12 proof sets, 274 functions verified, 0 errors** (frozen `a561191c…`, gate `7a9f0f1f…`) |
-| Independent proof review | **ACCEPT** of the full gate — 12/12 pairs, 274 functions, token-lexer `spec_guard` (`proofs/REVIEW.md`) |
-| `cargo fmt`/`check`/`clippy`/`build --release` | pass; re-run after the shutdown/leak fix |
+| `cargo test --workspace --no-fail-fast` | **715 passed, 0 failed, 30 ignored** |
+| Verus proofs (`proofs/run-gates.sh`) | **12 proof sets, 277 functions verified, 0 errors** (frozen `1a07e2b5…`, gate `9ce7fb1a…`) |
+| Independent proof review | **ACCEPT** of the full gate — 12/12 pairs, 277 functions, token-lexer `spec_guard` (`proofs/REVIEW.md`) |
+| `cargo fmt`/`check`/`clippy`/`build --release` | pass; re-run for 0.1.1 |
 | `./proofs/check-drift.sh` | no source drift (21 declared sources match) |
 | `metrolist --smoke 120` | `SMOKE_OK frames=120 backend=Vulkan` |
 | AppImage smoke (`--smoke 120`) | `SMOKE_OK frames=120 backend=Vulkan home_sections=2` in a clean environment on Wayland and via `--appimage-extract-and-run`; screenshot at 405×900 |
-| AppImage playback (bundled mpv, muted) | mpv JSON IPC on the demo track: `mute=yes volume=0 ao=null`, opus, position 3.956/3600.02 s |
-| Shutdown / leak checks | 0 mpv processes, 0 engine sockets and 0 instance socket after smoke, screenshot and SIGTERM (68 ms); SIGKILL leaves 0 children and the next launch sweeps stale sockets |
-| Installed copy (`~/AppImages/metrolist_desktop.appimage`, 755) | same size and sha256; clean-env smoke 0/0/0 leaks |
-| `sha256sum -c dist/SHA256SUMS` | `Metrolist-Desktop-0.1.0-x86_64.AppImage: OK` |
+| Audio mute fix | seeded WirePlumber stream mute cleared by the engine (v0.1.0 control stayed muted); explicit user "test mute" still mutes |
+| Player / Settings | rotating vinyl screenshot (`docs/ui-player-vinyl-405.png`); Settings reachable from sidebar and compact bottom nav (`docs/ui-sidebar-settings-405.png`) |
+| Shutdown / leak checks | 0 mpv processes, 0 engine sockets and 0 instance socket after smoke and SIGTERM; SIGKILL leaves 0 children and the next launch sweeps stale sockets |
+| Installed copy (`~/AppImages/metrolist_desktop.appimage`, 755) | same size and sha256; clean-env smoke, 0 leaks |
+| `sha256sum -c dist/SHA256SUMS` | `Metrolist-Desktop-0.1.1-x86_64.AppImage: OK` |
 
 The 30 ignored tests are the live ones that need mpv, D-Bus/tray/notification
 services, the single-instance socket or the network.

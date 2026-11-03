@@ -221,10 +221,25 @@ impl PlaybackController {
     }
 
     /// Replace the queue and start at `start_index` (clamped to range).
+    ///
+    /// Clicking the entry that is already loaded is a no-op: tearing the queue
+    /// down would reload the same URL from 0 and leave an audible gap while mpv
+    /// reopens the stream. A paused entry resumes instead.
     pub fn play_queue(&mut self, mut queue: Queue, start_index: usize) {
         if !queue.is_empty() {
             let index = start_index.min(queue.len() - 1);
             let _ = queue.jump_to(index);
+            if self.is_current_entry(&queue, index) {
+                let paused = self.snapshot.status == PlaybackStatus::Paused;
+                self.queue = queue;
+                if paused {
+                    self.send(AudioCommand::Play);
+                    self.snapshot.status = PlaybackStatus::Playing;
+                }
+                self.emit_snapshot();
+                self.emit_queue();
+                return;
+            }
         }
         self.queue = queue;
         self.abort_crossfade();
@@ -667,6 +682,28 @@ impl PlaybackController {
         self.emit_snapshot();
         self.emit_queue();
         self.prefetch_next();
+    }
+
+    /// True when `queue` at `index` is the entry already loaded in the active
+    /// engine, so a click on it must not reload the stream.
+    fn is_current_entry(&self, queue: &Queue, index: usize) -> bool {
+        self.fade.is_none()
+            && self.current_url.is_some()
+            && self.queue.len() == queue.len()
+            && self.queue.position() == index
+            && queue.position() == index
+            && matches!(
+                self.snapshot.status,
+                PlaybackStatus::Playing
+                    | PlaybackStatus::Paused
+                    | PlaybackStatus::Buffering
+                    | PlaybackStatus::Loading
+            )
+            && self
+                .queue
+                .iter()
+                .map(|song| &song.id)
+                .eq(queue.iter().map(|song| &song.id))
     }
 
     fn url_for(&mut self, video_id: &str) -> Option<String> {
@@ -1321,6 +1358,62 @@ mod tests {
             .iter()
             .any(|event| matches!(event, ControllerEvent::Snapshot(_))));
         assert_eq!(harness.controller.snapshot().current.unwrap().id, "a");
+    }
+
+    #[test]
+    fn clicking_the_current_entry_does_not_reload_the_stream() {
+        let mut harness = Harness::new(Arc::new(Direct));
+        harness.controller.play_queue(queue_of(&["a", "b", "c"]), 1);
+        assert_eq!(harness.commands(), vec![load("url:b"), enqueue("url:c")]);
+        harness.controller.poll();
+
+        // The row for the already-loaded entry is clicked again.
+        harness.controller.play_queue(queue_of(&["a", "b", "c"]), 1);
+        assert!(
+            harness.commands().is_empty(),
+            "a click on the current entry must not reload it"
+        );
+        assert_eq!(
+            harness.controller.snapshot().status,
+            PlaybackStatus::Loading
+        );
+        assert_eq!(harness.controller.queue().position(), 1);
+        let events = harness.controller.poll();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ControllerEvent::QueueChanged(view) if view.position == Some(1)
+        )));
+    }
+
+    #[test]
+    fn clicking_the_current_entry_while_paused_resumes_without_reloading() {
+        let mut harness = Harness::new(Arc::new(Direct));
+        harness.controller.play_queue(queue_of(&["a", "b"]), 0);
+        harness.commands();
+        harness.engine(AudioEvent::Snapshot(PlayerSnapshot {
+            status: PlaybackStatus::Paused,
+            ..PlayerSnapshot::default()
+        }));
+        harness.controller.poll();
+
+        harness.controller.play_queue(queue_of(&["a", "b"]), 0);
+        assert_eq!(harness.commands(), vec![AudioCommand::Play]);
+        assert_eq!(
+            harness.controller.snapshot().status,
+            PlaybackStatus::Playing
+        );
+    }
+
+    #[test]
+    fn clicking_a_different_entry_still_loads_it() {
+        let mut harness = Harness::new(Arc::new(Direct));
+        harness.controller.play_queue(queue_of(&["a", "b", "c"]), 0);
+        harness.commands();
+        harness.controller.poll();
+
+        harness.controller.play_queue(queue_of(&["a", "b", "c"]), 2);
+        assert_eq!(harness.commands(), vec![load("url:c")]);
+        assert_eq!(harness.controller.queue().position(), 2);
     }
 
     #[test]

@@ -14,6 +14,29 @@ use ml_downloads::{progress_percent, Download, DownloadState};
 use ml_recognition::{RecognitionError, RecognitionResult};
 use ml_store::{StatsPeriod, StatsReport, StatsSummary};
 
+/// Slow vinyl rotation, 10 degrees per second.
+pub const VINYL_RADIANS_PER_SEC: f32 = 10.0 * std::f32::consts::PI / 180.0;
+
+/// Wrap an angle into `[0, 2*pi)`.
+pub fn wrap_vinyl_angle(angle: f32) -> f32 {
+    const TAU: f32 = std::f32::consts::TAU;
+    let wrapped = angle % TAU;
+    if wrapped < 0.0 {
+        wrapped + TAU
+    } else {
+        wrapped + 0.0
+    }
+}
+
+/// Advance the vinyl angle by a frame, clamping long frames so a resume or
+/// stall cannot jump the disc. Paused/loading frames freeze the angle.
+pub fn advance_vinyl_angle(angle: f32, dt: f32, playing: bool) -> f32 {
+    if !playing {
+        return wrap_vinyl_angle(angle);
+    }
+    wrap_vinyl_angle(angle + dt.clamp(0.0, 0.05) * VINYL_RADIANS_PER_SEC)
+}
+
 /// Progress of a recognition capture, clamped to `0.0..=1.0`.
 pub fn recognition_progress(elapsed_ms: u64, sample_ms: u64) -> f32 {
     if sample_ms == 0 {

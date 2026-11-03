@@ -4,7 +4,7 @@
 
 | file | sha256 (at freeze) |
 |------|--------------------|
-| crates/ui/src/pure.rs | 29342d9ae1d0b4f7f32e6e1d5ebf536984eb1fe9d3d5516717c7163f2231a691 |
+| crates/ui/src/pure.rs | bd69302e719e139de95fd2194b7d0c015a5d03068a1f4b560b9214018802c808 |
 | crates/downloads/src/model.rs | 73e3b75407ab16e97435933955a007571a830a0ec415095534110b4eeff3b648 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
@@ -173,6 +173,7 @@ why — none of these is claimed as verified anywhere:
 | `translation_endpoint_valid`, `lastfm_connect_mode` | OUT-OF-SUBSET | `&str` trim/prefix logic and string emptiness |
 | `lyrics_offset_label`, `crossfade_label`, `gain_label`, `listening_time_text`, `stats_date_text`, `wrapped_summary`, `stats_summary_cards`, `bytes_text`, `download_progress_text` | OUT-OF-SUBSET | `String`/`format!`/calendar arithmetic over i128 mixed with formatting |
 | `seek_target`, `volume_target`, `crossfade_seconds`, `playback_speed`, `speed_percent`, `normalization_gain`, `volume_step`, `clamp_eq_bands` | OUT-OF-SUBSET | `f32`/`f64` clamp+round; no float encoding in vstd, so no bound on the returned float is claimed |
+| `wrap_vinyl_angle`, `advance_vinyl_angle` (v0.1.1) | OUT-OF-SUBSET | `f32` modulo/`TAU` wrap plus `dt.clamp(0.0, 0.05)`; same float policy, pinned by the UI's rotation tests |
 | `stats_period_label`, `month_short`, `download_hint`, `tray_command` | CANDIDATE | enum/table → literal text, no arithmetic; the tables are pinned by the unit tests, not by this pair (only `download_icon`/`download_click` are modelled as id/enum tables) |
 | `account_error_message` | OUT-OF-SUBSET | `String` + payload matching; only its arm selection could be modelled |
 | `valid_search_query`, `sanitize_proxy_url`, `parse_deep_link`, `first_deep_link`, `sanitize_video_id` | OUT-OF-SUBSET | `&str` `trim`/`strip_prefix`/`chars` scanning |
@@ -186,3 +187,19 @@ audio / recognition / stats UI landed. The proven bodies were re-read against
 the frozen revision and are the same text; the hashes above are that revision's
 (`29342d9a…`). `back_route` was added to this pair at the reviewer's request
 (it had been claimed but not transcribed) — no source file changed for that.
+
+## Re-freeze 2026-11-02 v0.1.1 (vinyl rotation helpers)
+
+`crates/ui/src/pure.rs` gained two `f32` helpers at the top of the file
+(`VINYL_RADIANS_PER_SEC`, `wrap_vinyl_angle`, `advance_vinyl_angle`) for the
+spinning-vinyl animation; the new hash is in the table above
+(`bd69302e…`). The delta is purely additive, so the pair's 16 source
+functions were re-read and are byte-identical (the six transcription helpers
+are unchanged too) — no `candidate.rs`/`original.rs` change and no re-prove. `crates/downloads/src/model.rs` is unchanged
+(`73e3b754…`), so `progress_percent` is untouched.
+
+The two new helpers are `f32` and fall under the documented float policy
+(OUT-OF-SUBSET, listed in the inventory above). `crates/ui/src/app.rs` also
+changed for the Settings nav routing and the single-fixture player demo; that
+file is owned by `proofs/radio` and its delta is recorded there — this pair
+does not prove anything in `app.rs`.

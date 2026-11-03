@@ -89,6 +89,108 @@ pub fn cover_uv(source: egui::Vec2, target: egui::Vec2) -> egui::Rect {
     egui::Rect::from_min_max(min, max)
 }
 
+/// Draw a vinyl-style record: dark disc, rim, grooves, circular album crop
+/// and centre spindle. The cover is a triangle fan sampling only the UV circle
+/// inside the cover crop, so no square texture corners can appear.
+pub fn vinyl_disc(
+    ui: &Ui,
+    app_theme: &Theme,
+    texture: Option<&TextureHandle>,
+    rect: egui::Rect,
+    angle: f32,
+) {
+    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return;
+    }
+    let radius = rect.width().min(rect.height()) * 0.5;
+    if radius < 2.0 {
+        return;
+    }
+    let center = rect.center();
+    let painter = ui.painter().with_clip_rect(rect);
+    let white = Color32::WHITE;
+    painter.circle_filled(center, radius, Color32::from_rgb(17, 16, 20));
+    painter.circle_stroke(
+        center,
+        (radius - 0.5).max(0.0),
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 32)),
+    );
+    for factor in [0.96, 0.90, 0.84] {
+        painter.circle_stroke(
+            center,
+            radius * factor,
+            Stroke::new(0.8, Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
+        );
+    }
+
+    let cover_radius = radius * 0.78;
+    if let Some(texture) = texture {
+        let uv = cover_uv(texture.size_vec2(), rect.size());
+        let uv_center = uv.center();
+        let uv_radius = uv.width().min(uv.height()) * 0.5;
+        let mut mesh = egui::Mesh::with_texture(texture.id());
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: center,
+            uv: uv_center,
+            color: white,
+        });
+        const SEGMENTS: u32 = 96;
+        const TAU: f32 = std::f32::consts::TAU;
+        for index in 0..=SEGMENTS {
+            let a = TAU * index as f32 / SEGMENTS as f32;
+            let position = center + Vec2::new(a.cos(), a.sin()) * cover_radius;
+            let rotated = a + angle;
+            let uv = uv_center + Vec2::new(rotated.cos(), rotated.sin()) * uv_radius;
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: position,
+                uv,
+                color: white,
+            });
+            if index > 0 {
+                mesh.add_triangle(0, index, index + 1);
+            }
+        }
+        painter.add(egui::Shape::mesh(mesh));
+        painter.circle_stroke(
+            center,
+            cover_radius,
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 48)),
+        );
+    } else {
+        painter.circle_filled(
+            center,
+            cover_radius,
+            app_theme.scheme.surface_container_high,
+        );
+        let primary = app_theme.scheme.primary_container;
+        painter.circle_filled(
+            center,
+            cover_radius * 0.72,
+            Color32::from_rgba_unmultiplied(primary.r(), primary.g(), primary.b(), 190),
+        );
+        paint_icon(
+            &painter,
+            center,
+            "music_note",
+            cover_radius * 0.55,
+            app_theme.scheme.on_surface_variant,
+        );
+        painter.circle_stroke(
+            center,
+            cover_radius,
+            Stroke::new(1.0, app_theme.scheme.outline_variant),
+        );
+    }
+
+    let hole = (radius * 0.035).clamp(2.5, 6.0);
+    painter.circle_filled(center, hole, Color32::from_rgb(9, 8, 11));
+    painter.circle_stroke(
+        center,
+        hole,
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 64)),
+    );
+}
+
 /// Rounded image, or a themed placeholder when no texture is available.
 pub fn art_or_placeholder(
     ui: &mut Ui,

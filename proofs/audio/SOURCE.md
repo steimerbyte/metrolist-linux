@@ -4,8 +4,8 @@
 
 | file | sha256 (at freeze) |
 |------|--------------------|
-| crates/audio/src/controller.rs | 82ab38dc48e24ebf3d4a9bb381ef884796afeeb630862258b2e51263b09eed18 |
-| crates/audio/src/engine.rs | 61eeaa0699c897000df1244e555c0090e0aa2ce8ac132272a27e19ce470b4dca |
+| crates/audio/src/controller.rs | 3e27db2dce3d7eaa48b7e015be773f95c76697fb0baf42462fac0cb637eca1b2 |
+| crates/audio/src/engine.rs | 1377ec5c5f76a2b0a16fb5d70b335beee8f9b1926ce5056d44eeda53ce7b7b15 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
 bundled Rust `1.99.1-x86_64-unknown-linux-gnu`; workspace pin `1.99.1`.
@@ -20,6 +20,9 @@ The clock-free arithmetic obligations frozen by audio2:
   out of subset; only the seconds value is proven.
 - `Ipc::request` — `self.next_id.wrapping_add(1)` is the id sent with
   each IPC request.
+- `should_clear_stream_mute` — `allow_unmute && !intended_muted`, the
+  stream-level `ao-mute` policy: a test/probe engine never unmutes, and a
+  stream the user muted is never cleared.
 
 ## Model deviations
 
@@ -83,8 +86,8 @@ unchanged):
 - `lemma_ordered_step` — inside an ordered (non-wrapping) window a later
   minute is still inside.
 
-`candidate.rs` now verifies 12 functions; `original.rs` (which carries no
-lemmas) verifies 4.
+`candidate.rs` verifies 15 functions (10 ghost lemmas); `original.rs` (which
+carries no lemmas) verifies 5.
 
 ### Out of subset at the new revision (unproven)
 
@@ -143,6 +146,11 @@ hash + semantic-delta record:
   `observe_all`, `set_device`, `apply_af`, `tick`, `teardown`, `kill`,
   `parse_audio_params` — subprocess/sockets/env/`serde_json`;
   OUT-OF-SUBSET.
+- engine stream-mute fix (v0.1.1): `clear_stream_mute` (ticks `ao-mute`
+  property writes through `Ipc::request`), `unmute_checks`/`STREAM_UNMUTE_TICKS`
+  accounting, `allow_unmute` plumbing from `MpvEngine::start` — socket/IPC
+  state machine; OUT-OF-SUBSET. Only the pure predicate
+  `should_clear_stream_mute` is proven.
 - engine shutdown/leak fix (final re-freeze below): `runtime_dir`,
   `socket_owner_pid` (its own unit test only), `pid_alive` (`libc::kill`),
   `sweep_stale_sockets`/`sweep_stale_sockets_in` (`std::fs` + uid check),
@@ -209,3 +217,29 @@ OUT-OF-SUBSET above. Test status at these hashes (workspace-wide, this turn):
 `cargo fmt` clean, clippy no new warnings, and the debug e2e shows 0 `mpv`
 processes and 0 sockets after smoke/screenshot/`SIGTERM` (a `SIGKILL` leaves
 only stale sockets, which the next launch sweeps).
+
+## Re-freeze 2026-11-02 v0.1.1 (stream-mute clear + keep-stream play)
+
+Reason: WirePlumber re-applies its saved per-app stream mute asynchronously,
+so a normal engine now clears the stream-level `ao-mute` for four ticks
+(`should_clear_stream_mute`, `allow_unmute` plumbing, `clear_stream_mute`),
+while test/probe engines stay muted; and clicking the already-loaded queue
+entry no longer tears the stream down (`is_current_entry`, three regression
+tests in `controller.rs`). New hashes are in the table above (controller
+`3e27db2d…`, engine `1377ec5c…`).
+
+- `sleep_window_contains` — unchanged, verbatim (controller.rs:61-73).
+- `set_sleep_timer` — the `SleepTimer::Minutes` arm still computes
+  `let seconds = (minutes as u64 * 60).min(24 * 60 * 60);` (controller.rs:542).
+- `Ipc::request` — still `self.next_id = self.next_id.wrapping_add(1);` and
+  `let request_id = self.next_id;` (engine.rs:785-786).
+- **New obligation**: `should_clear_stream_mute` (engine.rs:144-146) is
+  transcribed with the spec `clear_stream_mute_spec`, plus
+  `lemma_stream_mute_table` (the four-case truth table) and
+  `lemma_muted_stays_muted` (`intended_muted || !allow_unmute` never clears).
+  No ghost material was added to any existing function; `candidate.rs` is now
+  15 verified and `original.rs` 5.
+
+The `keep-stream` click path (`is_current_entry`, `play_queue`) is CANDIDATE:
+it is a controller state machine over `fade`/`current_url`/queue contents,
+pinned by three regression tests, not a closed-form model.
