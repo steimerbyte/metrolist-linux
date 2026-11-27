@@ -210,7 +210,10 @@ pub fn vinyl_disc(
     );
 }
 
-/// Image with a 1-px frame, or a flat themed placeholder.
+/// Dither strength of the no-cover placeholder: visible, below the skeleton.
+const PLACEHOLDER_STRENGTH: f32 = 0.2;
+
+/// Image with a 1-px frame, or a dithered themed placeholder.
 pub fn art_or_placeholder(
     ui: &mut Ui,
     app_theme: &Theme,
@@ -230,10 +233,11 @@ pub fn art_or_placeholder(
             .corner_radius(radius)
             .paint_at(ui, rect);
     } else {
-        // No decoded cover: a flat block keeps the slot intentional and needs
-        // no per-frame gradient.
+        // No decoded cover: the Nothing dither keeps the slot intentional; the
+        // note icon still says "art missing" instead of "empty".
         let p = ui.painter();
         p.rect_filled(rect, radius, app_theme.scheme.surface_container_high);
+        dither_rect(&p.with_clip_rect(rect), rect, PLACEHOLDER_STRENGTH);
         paint_icon(
             p,
             rect.center(),

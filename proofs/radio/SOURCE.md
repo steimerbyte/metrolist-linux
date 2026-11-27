@@ -5,7 +5,7 @@
 | file | sha256 (at freeze) |
 |------|--------------------|
 | crates/ui/src/services.rs | bb2e7c16136a3f9c0e87af06f75c8b85e2009cbed5197dcfd797aeaed5570df8 |
-| crates/ui/src/app.rs | f7031bf51cff7268c0f821452df0647fc1bb6896e78866e930673f093fe1e4b4 |
+| crates/ui/src/app.rs | 7a69076b22fb1290509099dbd9e3b2735c1ac019c9ddcaf7fef134064feaa17c |
 | crates/innertube/src/lib.rs | 5ce472ec2fec2dc42c766ea4d6849641395e84f384daaa7e6a38338f18aa1123 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
@@ -201,3 +201,13 @@ skips the boot `load_home` for that mode, and `after_frame` reports it ready
 while the feed is still loading. `url_route` and every other proven body are
 byte-identical (the change sits in `App::new` and `after_frame`, not in the
 route layout). No obligation changed, no proof text changed.
+
+## Re-freeze 2026-11-27 (queue thumbnails)
+
+`crates/ui/src/app.rs` gained the queue-thumbnail wiring: `seed_demo_art`
+uploads a procedural `ArtImage` for `DEMO_ART_URL`, `demo_song`/`demo_queue`
+carry that thumbnail (the last of three demo rows drops it so the dithered
+placeholder shows), and `queue_overlay` passes `&mut self.art` into the queue
+screen. `url_route` (L164), the MPRE test and every other proven body are
+byte-identical; the delta sits in `App` demo helpers and `queue_overlay`, not
+in the route layout. No obligation changed, no proof text changed.

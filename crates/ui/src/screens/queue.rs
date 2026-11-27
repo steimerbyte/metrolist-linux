@@ -2,12 +2,13 @@
 
 use eframe::egui::{self, Align, Layout, Pos2, Rect, Sense, Ui, Vec2};
 
+use crate::art::ArtCache;
 use crate::pure::{download_click, download_hint, download_icon, DownloadBadge, DownloadClick};
 use crate::services::Services;
 use crate::theme::{
     font_label, medium_font, regular_font, Theme, DP12, DP4, HEADLINE_SMALL, LABEL_SMALL, TOUCH,
 };
-use crate::widgets::{icon_button_at, outlined_button, paint_icon, playing_bars, text, text_width};
+use crate::widgets::{art_or_placeholder, icon_button_at, outlined_button, paint_icon, text, text_width};
 use ml_core::{format_duration_opt, Song};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,9 +27,9 @@ pub fn show_modal(
     ctx: &egui::Context,
     app_theme: &Theme,
     services: &Services,
+    art: &mut ArtCache,
     songs: &[Song],
     position: Option<usize>,
-    playing: bool,
     progress: f32,
 ) -> QueueAction {
     let mut action = QueueAction::None;
@@ -90,9 +91,9 @@ pub fn show_modal(
                             ui,
                             app_theme,
                             services,
+                            art,
                             songs,
                             position,
-                            playing,
                             &mut action,
                         );
                     });
@@ -145,9 +146,9 @@ fn queue_rows(
     ui: &mut Ui,
     app_theme: &Theme,
     services: &Services,
+    art: &mut ArtCache,
     songs: &[Song],
     position: Option<usize>,
-    playing: bool,
     action: &mut QueueAction,
 ) {
     for (index, song) in songs.iter().enumerate() {
@@ -170,32 +171,20 @@ fn queue_rows(
             [rect.left_bottom(), rect.right_bottom()],
             app_theme.hairline(),
         );
-        if active {
-            playing_bars(
-                ui,
-                app_theme,
-                Rect::from_center_size(
-                    Pos2::new(rect.left() + 20.0, rect.center().y),
-                    Vec2::splat(20.0),
-                ),
-                playing,
-            );
-        } else {
-            let number = format!("{}", index + 1);
-            let number_width = text_width(ui.painter(), &number, font_label(LABEL_SMALL));
-            text(
-                ui.painter(),
-                Pos2::new(
-                    rect.left() + 20.0 - number_width / 2.0,
-                    rect.center().y - 7.0,
-                ),
-                &number,
-                font_label(LABEL_SMALL),
-                app_theme.scheme.on_surface_variant,
-            );
-        }
+        // The cover replaces the old number column: one 40 dp slot keeps the
+        // row at 56 dp and leaves the title room. The 2 px selection line stays.
+        let cover = Rect::from_min_size(
+            Pos2::new(rect.left() + 4.0, rect.center().y - 20.0),
+            Vec2::splat(40.0),
+        );
+        let texture = art.texture(
+            ui.ctx(),
+            services,
+            song.thumbnail_url.as_deref().unwrap_or(""),
+        );
+        art_or_placeholder(ui, app_theme, texture.as_ref(), cover, 3);
 
-        let text_x = rect.left() + 42.0;
+        let text_x = rect.left() + 52.0;
         let [up_x, down_x, remove_x, download_x] = queue_action_centers(rect.right());
         let action_x = up_x;
         let text_width = (action_x - 8.0 - text_x).max(80.0);

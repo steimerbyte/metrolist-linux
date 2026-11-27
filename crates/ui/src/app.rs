@@ -14,7 +14,7 @@ use ml_core::{
 use ml_downloads::{DownloadEvent, DownloadState};
 use ml_innertube::parse::url::{parse_url, ParsedUrl};
 
-use crate::art::ArtCache;
+use crate::art::{ArtCache, ArtImage};
 use crate::desktop::{self, Desktop, DesktopEvent};
 use crate::integrations::{self, DiscordStatus, LastFmStatus, LastFmUiState};
 use crate::motion;
@@ -404,6 +404,7 @@ impl App {
             Some(DemoMode::Queue) => {
                 app.player_open = true;
                 app.queue_open = true;
+                app.seed_demo_art(&cc.egui_ctx);
                 app.start_demo();
             }
             Some(DemoMode::Lyrics) => {
@@ -521,6 +522,8 @@ impl App {
 
     /// CLI demo: the only track any demo may queue or play.
     const DEMO_SONG_ID: &str = "oWqnJdGy_84";
+    /// Demo thumbnail URL seeded into the art cache; never fetched.
+    const DEMO_ART_URL: &str = "demo://queue/empty-streets";
 
     fn demo_song() -> Song {
         Song {
@@ -528,14 +531,42 @@ impl App {
             title: "Empty Streets".to_string(),
             artists: vec![ml_core::Artist::new("LONOWN", None)],
             duration: Some(232),
+            thumbnail_url: Some(Self::DEMO_ART_URL.to_string()),
             ..Song::default()
         }
     }
 
     /// Queue/lyrics demos: the approved fixture only, repeated so the queue has
-    /// rows. A list source never starts radio or fetches `next`.
+    /// rows; the last row drops its thumbnail so the dithered placeholder shows.
+    /// A list source never starts radio or fetches `next`.
     fn demo_queue() -> Vec<Song> {
-        vec![Self::demo_song(); 3]
+        let mut rows = vec![Self::demo_song(); 3];
+        rows[2].thumbnail_url = None;
+        rows
+    }
+
+    /// Demo-only: upload a procedural cover for `DEMO_ART_URL` so the queue
+    /// screenshot shows decoded art without a network fetch.
+    fn seed_demo_art(&mut self, ctx: &Context) {
+        let size = 160usize;
+        let mut rgba = Vec::with_capacity(size * size * 4);
+        for y in 0..size {
+            for x in 0..size {
+                let square = (48..112).contains(&x) && (48..112).contains(&y);
+                let band = if x < size / 2 { 22 } else { 36 };
+                let v = if square { 240 } else { band };
+                rgba.extend_from_slice(&[v, v, v, 255]);
+            }
+        }
+        self.art.insert(
+            ctx,
+            Self::DEMO_ART_URL,
+            Some(Arc::new(ArtImage {
+                width: size,
+                height: size,
+                rgba,
+            })),
+        );
     }
 
     /// Screenshot playback stays muted: an unmuted null sink can reject the
@@ -3444,9 +3475,9 @@ impl App {
             ctx,
             &self.theme,
             &self.services,
+            &mut self.art,
             &songs,
             position,
-            self.snapshot.is_playing(),
             progress,
         );
         if self.together_guest()
