@@ -113,28 +113,50 @@ interfaces and per-workstream ownership.
 
 ## AppImage
 
-`dist/Metrolist-Desktop-0.1.3-x86_64.AppImage` — 121,031,160 bytes (115.4 MiB),
-AppImage type 2 (runtime commit `fedfad5`), built 2026-11-03 in
-`rust:1.99.1-bookworm` from the frozen tree in `docs/SOURCE-FREEZE.sha256`
-(247 files, self-sha256 `87f5b3a7…`). Published as
-[v0.1.3](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.3).
+`dist/Metrolist-Desktop-0.1.4-x86_64.AppImage` — 120,285,688 bytes (114.7 MiB),
+AppImage type 2 (runtime commit `fedfad5`), built 2026-11-27 in
+`rust:1.99.1-bookworm` from the tree frozen in `docs/SOURCE-FREEZE.sha256`
+(275 files, self-sha256 `78e714e6…`) with the Debian bookworm mpv
+bundle (`build/mpv-bundle`). Published as
+[v0.1.4](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.4).
 
 ```text
-sha256  19307f8a6a8bf7e4359ced4bb0076871dee0419da16900d47f7fe2b690c91894
+sha256  b31088c6b0aed5a42097d1e718878323bccbf55fc449601f0c6bf4c2e51317ee
 ```
 
 ```sh
 cd dist && sha256sum -c SHA256SUMS
-# Metrolist-Desktop-0.1.3-x86_64.AppImage: OK
+# Metrolist-Desktop-0.1.4-x86_64.AppImage: OK
 ```
 
 ```sh
 chmod +x dist/Metrolist-Desktop-*-x86_64.AppImage
 ./dist/Metrolist-Desktop-*-x86_64.AppImage
 # or install it for the desktop (the layout used for release verification):
-mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.3-x86_64.AppImage \
+mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.4-x86_64.AppImage \
   ~/AppImages/metrolist_desktop.appimage && chmod 755 ~/AppImages/metrolist_desktop.appimage
 ```
+
+The 0.1.3 artifact (121,031,160 bytes, sha256 `19307f8a6a8b…`) stays at its tag.
+
+### What changed in 0.1.4
+
+- **Boot sequence** — `ml-boot` registry with a start-up overlay (theme, fonts,
+  settings, session, home) instead of silent first frames; every module logs
+  `ok` or `degraded`.
+- **Home feed** — Explore is the default `HomeView` (page + shelf prefixes);
+  Settings chips list the rejected shelves, and a change reloads Home. The
+  filter runs on `HomeLoaded`/`HomeMore`; the client keeps the full feed.
+- **Streams** — innertube StreamShim serves mpv from loopback in 512 KiB
+  chunks and re-mints on 403/410; a rejected URL is dropped so Play resolves
+  again. The output mute is reasserted only while an output is open.
+- **Queue thumbnails** — a 40 px cover per 56 dp row; missing or failed art
+  falls back to the dot dither instead of a blank slot.
+- **Player waveform** — 2 dp solid bars at a 3 dp pitch, played `on_surface`
+  with 1 px white tips, unplayed `on_surface_variant`, a 2 pt 4x4 Bayer
+  checker behind the band; one seek on release, hover time bubble.
+- **Sessions** — signed-in requests prefer the jar `visitor_data` (PoToken,
+  then config, then jar), read in its own scope so the future stays `Send`.
 
 ### What changed in 0.1.3
 

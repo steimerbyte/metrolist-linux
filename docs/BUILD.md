@@ -85,6 +85,25 @@ container `d8e3f3ae…`) at tag `v0.1.2`, 0.1.1 (`01b40cf2…`, container
 `d10f6fd4…`) at tag `v0.1.1`, 0.1.0 (`b4b49387…`, container `ff8cfa91…`) at
 tag `v0.1.0`.
 
+## Validated artifact (2026-11-27, v0.1.4)
+
+```text
+dist/Metrolist-Desktop-0.1.4-x86_64.AppImage
+size:   120,285,688 bytes
+sha256: b31088c6b0aed5a42097d1e718878323bccbf55fc449601f0c6bf4c2e51317ee
+app:    max GLIBC 2.35
+mpv:    0.35.1, max GLIBC 2.34
+```
+
+Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (275 files,
+self-sha `78e714e6…`) with `VERSION=0.1.4 MPV_BUNDLE_REUSE=1
+packaging/build-appimage.sh --container`; builder `rust:1.99.1-bookworm`
+(pulled digest
+`e6f2cff35d0f309acf8433b4f05878ed77092602c5065cc81801177da0bb3a9c`, plus
+`libasound2-dev` installed through the host network because the default
+container DNS could not reach `deb.debian.org`), mpv bundle reused from
+`build/mpv-bundle`. The host binary stays a development reference only.
+
 Equivalent explicit commands:
 
 ```sh

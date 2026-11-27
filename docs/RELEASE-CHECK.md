@@ -7,8 +7,8 @@ Verdict: **RELEASE READY**.
   workspace version `0.1.3`.
 - Workspace: `crates/{core,innertube,lyrics,store,downloads,audio,integrations,ui}`,
   binary `metrolist` (`crates/ui/src/main.rs`).
-- The v0.1.2 record below (gate, artifact, live checks) is historical; the
-  v0.1.3 record is the section at the end of this file. v0.1.1 and v0.1.0
+- The v0.1.2 and v0.1.3 records below are historical; the v0.1.4 record is
+  the section at the end of this file. v0.1.1 and v0.1.0
   remain published at their tags.
 
 ## Gate commands
@@ -384,3 +384,30 @@ The audit-fix tranche added four tests (3 + 1). `cargo test -p ml-ui --lib` is
 109 passed (was 105); the full `cargo test -p ml-ui` is 122 = 109 lib + 13
 integration, 6 live tests ignored. The workspace gate is **744 passed / 0
 failed / 31 ignored**.
+
+# Release check — 2026-11-27 (v0.1.4)
+
+Release gate for the 0.1.4 AppImage (workspace version `0.1.4`; the 11 `ml-*`
+packages bumped in `Cargo.lock`, one stale `ml-innertube` edge removed from
+`ml-downloads` so `--locked` resolves). Verdict: **RELEASE READY**.
+
+- Artifact: `dist/Metrolist-Desktop-0.1.4-x86_64.AppImage`, 120,285,688 bytes,
+  sha256 `b31088c6b0aed5a42097d1e718878323bccbf55fc449601f0c6bf4c2e51317ee`, max GLIBC 2.35 (app), 2.34 (bundled mpv 0.35.1).
+- Builder: `packaging/build-appimage.sh --container` on
+  `rust:1.99.1-bookworm` (pulled digest `e6f2cff3…`, `libasound2-dev`
+  preinstalled because the container DNS could not reach `deb.debian.org`),
+  mpv bundle reused from `build/mpv-bundle` (`MPV_BUNDLE_REUSE=1`).
+- The host has no `cargo` on PATH by repo policy; the checks below ran on the
+  direct rustc chain, the test binary and the new AppImage.
+
+| Command | Result |
+|---|---|
+| `ml_ui` unit tests | **117 passed, 0 failed** |
+| `proofs/run-gates.sh` | **12/12 PASS** — 297 verified, 0 errors; `check-drift.sh` 21/21; review signed |
+| `blaze check` | exit 1 — 595 items outside the checkable set (foreign heads `atspi_common`, `image_webp`, `zbus` only), no own error |
+| `dist/Metrolist-Desktop-0.1.4-x86_64.AppImage --smoke 120` | exit 0, `SMOKE_FRAME` p50 7.063 ms |
+| `sha256sum -c dist/SHA256SUMS` | `Metrolist-Desktop-0.1.4-x86_64.AppImage: OK` |
+
+The 0.1.4 changes are the boot overlay, the configurable home feed, the
+stream shim, the queue covers and the player waveform; the v0.1.3 gate above
+stays historical and is not re-run.
