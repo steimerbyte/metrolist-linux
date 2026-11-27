@@ -171,7 +171,9 @@ fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
             for (icon, title, subtitle, route) in chunk {
                 let (rect, response) =
                     ui.allocate_exact_size(Vec2::new(card_width, 80.0), egui::Sense::click());
-                let (hover_t, _) = motion::interaction(ui, &response);
+                let (hover_t, press_t) = motion::interaction(ui, &response);
+                let scale = motion::press_scale_at(press_t);
+                let rect = egui::Rect::from_center_size(rect.center(), rect.size() * scale);
                 let fill = theme
                     .card()
                     .lerp_to_gamma(theme.scheme.surface_container_high, hover_t);
@@ -188,7 +190,7 @@ fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
                     icon_center,
                     icon,
                     20.0,
-                    theme.scheme.on_surface_variant,
+                    motion::pressed_color(theme.scheme.on_surface_variant, press_t),
                 );
                 let text_x = rect.left() + DP48 + DP8;
                 let text_width = (rect.right() - DP12 - text_x).max(24.0);
@@ -197,7 +199,7 @@ fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
                     egui::pos2(text_x, rect.top() + DP16),
                     title,
                     medium_font(16.0),
-                    theme.scheme.on_surface,
+                    motion::pressed_color(theme.scheme.on_surface, press_t),
                     text_width,
                 );
                 elided(
@@ -205,7 +207,7 @@ fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
                     egui::pos2(text_x, rect.top() + DP16 + 21.0),
                     subtitle,
                     font_label(LABEL_SMALL),
-                    theme.scheme.on_surface_variant,
+                    motion::pressed_color(theme.scheme.on_surface_variant, press_t),
                     text_width,
                 );
                 if response.clicked() {

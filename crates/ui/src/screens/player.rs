@@ -8,8 +8,8 @@ use crate::theme::{
     LABEL_SMALL, SHAPE_LARGE, TOUCH,
 };
 use crate::widgets::{
-    art_or_placeholder, icon_button, icon_button_at, outlined_button, paint_icon, paint_icon_swap,
-    slider, waveform_slider,
+    art_or_placeholder, icon_button, icon_button_at, outlined_button, paint_icon,
+    paint_icon_button_state, paint_icon_swap, slider, waveform_slider,
 };
 use ml_core::{format_position, PlaybackStatus, RepeatMode, Song};
 
@@ -389,9 +389,7 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 transport_button(ui, app_theme, "shuffle", "Shuffle", 20.0)
                     .on_hover_text("Shuffle (S)")
             });
-            if view.shuffle {
-                active_dot(ui, app_theme, &shuffle);
-            }
+            active_dot(ui, app_theme, &shuffle, view.shuffle);
             if shuffle.clicked() {
                 action = PlayerAction::ToggleShuffle;
             }
@@ -406,7 +404,7 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 ui,
                 egui::Id::unique("player_play_mix"),
                 view.playing,
-                motion::SELECT,
+                motion::PLAYER,
             );
             let toggle = transport_slot(ui, 64.0, 64.0, |ui| {
                 play_pill(ui, app_theme, play_mix).on_hover_text("Play/Pause (Space)")
@@ -434,9 +432,7 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 transport_button(ui, app_theme, repeat_icon, repeat_label, 20.0)
                     .on_hover_text("Repeat (R)")
             });
-            if view.repeat != RepeatMode::Off {
-                active_dot(ui, app_theme, &repeat);
-            }
+            active_dot(ui, app_theme, &repeat, view.repeat != RepeatMode::Off);
             if repeat.clicked() {
                 action = PlayerAction::CycleRepeat;
             }
@@ -444,9 +440,7 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 transport_button(ui, app_theme, "radio", "Start radio", 20.0)
                     .on_hover_text("Start radio")
             });
-            if view.radio_active {
-                active_dot(ui, app_theme, &radio);
-            }
+            active_dot(ui, app_theme, &radio, view.radio_active);
             if radio.clicked() {
                 action = PlayerAction::StartRadio;
             }
@@ -455,12 +449,16 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
     action
 }
 
-/// Small primary dot under an active transport toggle.
-fn active_dot(ui: &Ui, app_theme: &Theme, response: &egui::Response) {
+/// Small primary dot under an active transport toggle, fading with the toggle.
+fn active_dot(ui: &Ui, app_theme: &Theme, response: &egui::Response, active: bool) {
+    let active_t = motion::t(ui, response.id.with("active_dot"), active, motion::SELECT);
+    if active_t < 0.01 {
+        return;
+    }
     ui.painter().circle_filled(
         Pos2::new(response.rect.center().x, response.rect.bottom() - 2.0),
         2.0,
-        app_theme.scheme.primary,
+        app_theme.scheme.primary.gamma_multiply(active_t),
     );
 }
 
@@ -494,30 +492,29 @@ fn transport_slot<R>(
     add(&mut slot)
 }
 
-/// Like toggle: the heart inverts to `on_surface` when liked; no hover fill.
+/// Like toggle: the heart inverts to `on_surface` when liked, over the shared
+/// icon-button hover layer and press scale.
 fn like_button(ui: &mut Ui, app_theme: &Theme, liked: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(TOUCH), Sense::click());
-    if response.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
+    let (scale, press_t) = paint_icon_button_state(ui, app_theme, rect, &response);
+    let color = if liked {
+        app_theme.scheme.on_surface
+    } else {
+        app_theme.scheme.on_surface_variant
+    };
     paint_icon(
         ui.painter(),
         rect.center(),
         "favorite",
-        22.0 * motion::press_scale(ui, &response),
-        if liked {
-            app_theme.scheme.on_surface
-        } else {
-            app_theme.scheme.on_surface_variant
-        },
+        22.0 * scale,
+        motion::pressed_color(color, press_t),
     );
-    motion::focus_ring(ui, rect, 22, &response);
     response
         .widget_info(|| WidgetInfo::selected(egui::Role::Button, true, liked, "Like this song"));
     response
 }
 
-/// 44 dp secondary transport target: a 1 px frame instead of a fill.
+/// 44 dp secondary transport target: a state layer inside a 1 px frame.
 fn transport_button(
     ui: &mut Ui,
     app_theme: &Theme,
@@ -527,21 +524,29 @@ fn transport_button(
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(TOUCH), Sense::click());
     let pill = (rect.height() * 0.5).round() as u8;
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    let scale = motion::press_scale_at(press_t);
+    let draw = Rect::from_center_size(rect.center(), rect.size() * scale);
+    if hover_t > 0.0 || press_t > 0.0 {
+        ui.painter().rect_filled(
+            draw,
+            pill,
+            motion::state_layer_at(app_theme.scheme.surface_container_high, hover_t, press_t),
+        );
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
     ui.painter().rect_stroke(
-        rect,
+        draw,
         pill,
         egui::Stroke::new(1.0, app_theme.scheme.outline),
         egui::StrokeKind::Inside,
     );
-    if response.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
     paint_icon(
         ui.painter(),
-        rect.center(),
+        draw.center(),
         icon_name,
-        icon_size,
-        app_theme.scheme.on_surface,
+        icon_size * scale,
+        motion::pressed_color(app_theme.scheme.on_surface, press_t),
     );
     motion::focus_ring(ui, rect, pill, &response);
     response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
@@ -552,19 +557,24 @@ fn transport_button(
 fn play_pill(ui: &mut Ui, app_theme: &Theme, mix: f32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(64.0, TOUCH), Sense::click());
     let pill = (rect.height() * 0.5).round() as u8;
-    ui.painter()
-        .rect_filled(rect, pill, app_theme.scheme.on_surface);
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    let draw = Rect::from_center_size(rect.center(), rect.size() * motion::press_scale_at(press_t));
+    ui.painter().rect_filled(
+        draw,
+        pill,
+        motion::state_layer_at(app_theme.scheme.on_surface, hover_t, press_t),
+    );
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     paint_icon_swap(
         ui.painter(),
-        rect.center(),
+        draw.center(),
         "play_arrow",
         "pause",
         mix,
         24.0,
-        app_theme.scheme.surface,
+        motion::pressed_color(app_theme.scheme.surface, press_t),
     );
     motion::focus_ring(ui, rect, pill, &response);
     response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, "Play/Pause"));
@@ -840,5 +850,63 @@ mod tests {
             });
             assert_eq!(next, PlayerAction::None);
         }
+    }
+
+    #[test]
+    fn held_transport_button_dims_its_glyph() {
+        let theme = TestTheme::from_settings(&Settings::default());
+        let ctx = Context::default();
+        let mut glyph = |time: f64, events: Vec<Event>| -> (Option<[u8; 4]>, Rect) {
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(120.0, 120.0))),
+                time: Some(time),
+                events,
+                ..RawInput::default()
+            };
+            let mut color = None;
+            let mut rect = Rect::NOTHING;
+            let mut output = ctx.run_ui(input, |ctx| {
+                CentralPanel::default().show(ctx, |ui| {
+                    rect = transport_button(ui, &theme, "shuffle", "Shuffle", 20.0).rect;
+                });
+            });
+            output.textures_delta.clear();
+            for clipped in &output.shapes {
+                if let Shape::Text(text) = &clipped.shape {
+                    if text.galley.text() == "shuffle" {
+                        color = Some(text.fallback_color.to_srgba_unmultiplied());
+                    }
+                }
+            }
+            (color, rect)
+        };
+        let (rest, rect) = glyph(0.0, Vec::new());
+        let rest = rest.expect("transport glyph is painted");
+        let center = rect.center();
+        glyph(0.01, vec![Event::PointerMoved(center)]);
+        for frame in 0..3 {
+            glyph(0.20 + frame as f64 * 0.05, Vec::new());
+        }
+        glyph(
+            0.45,
+            vec![
+                Event::PointerMoved(center),
+                Event::PointerButton {
+                    pos: center,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::default(),
+                },
+            ],
+        );
+        for frame in 0..4 {
+            glyph(0.50 + frame as f64 * 0.05, Vec::new());
+        }
+        let held = glyph(0.75, Vec::new())
+            .0
+            .expect("held transport glyph is painted");
+        assert_eq!(held[..3], rest[..3], "held glyph keeps its rgb");
+        assert_eq!(rest[3], 255, "the resting glyph is opaque");
+        assert_eq!(held[3], 230, "the held glyph fades to alpha 230");
     }
 }

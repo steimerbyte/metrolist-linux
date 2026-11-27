@@ -66,7 +66,7 @@ mpv:    0.35.1, max GLIBC_2.34
 ```
 
 Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (247 files, self-sha
-`87f5b3a7…`, `sha256sum -c --quiet` exits 0) in `rust:1.99.1-bookworm` with
+`b93b87da…`, `sha256sum -c --quiet` exits 0) in `rust:1.99.1-bookworm` with
 `CARGO_BUILD_JOBS=1` (release compile 23m59s); the shipped container binary is
 `build/target-container/release/metrolist`, sha256
 `1d2d5a05bd1f0097ce6dd5c89afc7e99e6ccdfa603ab9997327e94e7ae1d819b`

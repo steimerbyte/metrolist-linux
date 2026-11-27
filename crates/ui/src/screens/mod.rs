@@ -152,7 +152,8 @@ pub fn sort_menu<T: Copy + PartialEq>(
     let text_width = text_width(ui.painter(), &text, font.clone());
     let width = (text_width + DP16 * 2.0).min(ui.available_width());
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, DP32), Sense::click());
-    let fill = motion::state_layer(ui, theme.scheme.surface, &response);
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    let fill = motion::state_layer_at(theme.scheme.surface, hover_t, press_t);
     let radius = (DP32 * 0.5) as u8;
     ui.painter().rect_filled(rect, radius, fill);
     ui.painter()
@@ -162,7 +163,7 @@ pub fn sort_menu<T: Copy + PartialEq>(
         Align2::CENTER_CENTER,
         &text,
         font,
-        theme.scheme.on_surface_variant,
+        motion::pressed_color(theme.scheme.on_surface_variant, press_t),
     );
     response.widget_info(|| {
         egui::WidgetInfo::labeled(

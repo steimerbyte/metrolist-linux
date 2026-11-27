@@ -3,6 +3,7 @@
 use eframe::egui::{self, Align, Layout, Pos2, Rect, Sense, Ui, Vec2};
 
 use crate::art::ArtCache;
+use crate::motion;
 use crate::pure::{download_click, download_hint, download_icon, DownloadBadge, DownloadClick};
 use crate::services::Services;
 use crate::theme::{
@@ -155,15 +156,20 @@ fn queue_rows(
         let (rect, row) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_HEIGHT), Sense::click());
         let active = position == Some(index);
-        if row.hovered() {
-            ui.painter()
-                .rect_filled(rect, 0, app_theme.scheme.surface_container_high);
+        let (hover_t, press_t) = motion::interaction(ui, &row);
+        if hover_t > 0.0 || press_t > 0.0 {
+            ui.painter().rect_filled(
+                rect,
+                0,
+                motion::state_layer_at(app_theme.scheme.surface_container_high, hover_t, press_t),
+            );
         }
-        if active {
+        let active_t = motion::t(ui, row.id.with("active"), active, motion::SELECT);
+        if active_t > 0.0 {
             ui.painter().rect_filled(
                 Rect::from_min_size(rect.min, Vec2::new(2.0, rect.height())),
                 0,
-                app_theme.scheme.on_surface,
+                app_theme.scheme.on_surface.gamma_multiply(active_t),
             );
         }
         // 1 px row rule plus a hard 2 px selection line: no pills, no radii.
@@ -193,7 +199,7 @@ fn queue_rows(
             Pos2::new(text_x, rect.top() + 10.0),
             &song.title,
             medium_font(14.0),
-            app_theme.scheme.on_surface,
+            motion::pressed_color(app_theme.scheme.on_surface, press_t),
             text_width,
         );
         let subtitle = match song.duration {
@@ -209,7 +215,7 @@ fn queue_rows(
             Pos2::new(text_x, rect.top() + ROW_HEIGHT / 2.0),
             &subtitle,
             regular_font(12.0),
-            app_theme.scheme.on_surface_variant,
+            motion::pressed_color(app_theme.scheme.on_surface_variant, press_t),
             text_width,
         );
 
@@ -217,7 +223,28 @@ fn queue_rows(
             let rect =
                 Rect::from_center_size(Pos2::new(x, rect.center().y), Vec2::splat(ACTION_SIZE));
             let response = ui.interact(rect, row.id.with(key), Sense::click());
-            paint_icon(ui.painter(), rect.center(), name, 17.0, color);
+            let (hover_t, press_t) = motion::interaction(ui, &response);
+            let scale = motion::press_scale_at(press_t);
+            if hover_t > 0.0 || press_t > 0.0 {
+                let radius = (ACTION_SIZE * 0.5 - 2.0).max(4.0) * scale;
+                ui.painter().circle_filled(
+                    rect.center(),
+                    radius,
+                    motion::state_layer_at(
+                        app_theme.scheme.surface_container_high,
+                        hover_t,
+                        press_t,
+                    ),
+                );
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            paint_icon(
+                ui.painter(),
+                rect.center(),
+                name,
+                17.0 * scale,
+                motion::pressed_color(color, press_t),
+            );
             let response = response.on_hover_text(label);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
             response

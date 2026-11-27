@@ -6,6 +6,7 @@ use ml_together::{
     Role, RoomState, ServerInfo, SessionSnapshot, TrackInfo, UserInfo, DEFAULT_SERVER_URL, SERVERS,
 };
 
+use crate::motion;
 use crate::state::{TogetherPhase, TogetherState};
 use crate::theme::{
     font_label, medium_font, regular_font, Theme, DP12, DP16, DP4, DP8, SHAPE_LARGE, TITLE_LARGE,
@@ -369,23 +370,27 @@ fn queue(
     for (index, track) in room.queue.iter().enumerate() {
         let (rect, response) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), 48.0), egui::Sense::click());
-        if response.hovered() && host {
-            ui.painter()
-                .rect_filled(rect, 0, theme.scheme.surface_container_high);
+        let (hover_t, press_t) = motion::interaction(ui, &response);
+        if host && (hover_t > 0.0 || press_t > 0.0) {
+            ui.painter().rect_filled(
+                rect,
+                0,
+                motion::state_layer_at(theme.scheme.surface_container_high, hover_t, press_t),
+            );
         }
         ui.painter().text(
             rect.left_top() + Vec2::new(8.0, 8.0),
             egui::Align2::LEFT_TOP,
             format!("{}", index + 1),
             font_label(11.0),
-            theme.scheme.on_surface_variant,
+            motion::pressed_color(theme.scheme.on_surface_variant, press_t),
         );
         ui.painter().text(
             rect.left_top() + Vec2::new(28.0, 6.0),
             egui::Align2::LEFT_TOP,
             &track.title,
             medium_font(14.0),
-            theme.scheme.on_surface,
+            motion::pressed_color(theme.scheme.on_surface, press_t),
         );
         let added = if track.suggested_by.is_empty() {
             "Host queue".to_string()
@@ -397,7 +402,7 @@ fn queue(
             egui::Align2::LEFT_TOP,
             format!("{} · {}", track.artist, added),
             regular_font(11.0),
-            theme.scheme.on_surface_variant,
+            motion::pressed_color(theme.scheme.on_surface_variant, press_t),
         );
         if host && response.clicked() {
             actions.push(TogetherAction::PlayRoomTrack(track.id.clone()));

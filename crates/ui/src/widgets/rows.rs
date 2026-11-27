@@ -5,7 +5,10 @@ use eframe::egui::{
 };
 use egui::{StrokeKind, WidgetInfo};
 
-use super::{art_or_placeholder, card_hover_stroke, elided, paint_icon, text_width};
+use super::{
+    art_or_placeholder, card_hover_stroke, controls::paint_icon_button_state, elided, paint_icon,
+    text_width,
+};
 use crate::motion;
 use crate::pure::{download_click, download_hint, download_icon, DownloadBadge, DownloadClick};
 use crate::theme::{
@@ -52,7 +55,7 @@ pub fn song_row(
     let width = width.max(120.0);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 64.0), Sense::click());
     let (hover_t, press_t) = motion::interaction(ui, &response);
-    let active_t = motion::t(ui, response.id.with("active"), active, motion::HOVER);
+    let active_t = motion::t(ui, response.id.with("active"), active, motion::SELECT);
     if active_t > 0.0 || hover_t > 0.0 || press_t > 0.0 {
         let base = app_theme.bg().lerp_to_gamma(
             app_theme.scheme.surface_container_high,
@@ -111,14 +114,26 @@ pub fn song_row(
             Vec2::new(width.max(1.0), 18.0),
         );
         let response = ui.interact(rect, response.id.with("artist"), Sense::click());
-        if response.hovered() {
+        let (hover_t, press_t) = motion::interaction(ui, &response);
+        // Link text cannot scale without re-rasterising glyphs, so the layer and
+        // the underline carry the press.
+        if hover_t > 0.0 || press_t > 0.0 {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+            ui.painter().rect_filled(
+                rect,
+                SHAPE_EXTRA_SMALL,
+                motion::state_layer_at(app_theme.scheme.surface_container_high, hover_t, press_t),
+            );
             ui.painter().line_segment(
                 [
                     Pos2::new(rect.left(), rect.bottom()),
                     Pos2::new(rect.right(), rect.bottom()),
                 ],
-                Stroke::new(1.0, app_theme.scheme.on_surface),
+                Stroke::new(
+                    1.0,
+                    motion::pressed_color(app_theme.scheme.on_surface, press_t)
+                        .gamma_multiply(hover_t),
+                ),
             );
         }
         response.widget_info(|| {
@@ -136,6 +151,8 @@ pub fn song_row(
         download_id,
         Sense::click(),
     );
+    let (download_scale, download_press) =
+        paint_icon_button_state(ui, app_theme, download_response.rect, &download_response);
     let color = match download {
         DownloadBadge::Completed => app_theme.scheme.success,
         DownloadBadge::Failed => app_theme.scheme.error,
@@ -145,8 +162,8 @@ pub fn song_row(
         ui.painter(),
         Pos2::new(download_x, rect.center().y),
         download_icon(download),
-        20.0,
-        color,
+        20.0 * download_scale,
+        motion::pressed_color(color, download_press),
     );
     if let DownloadBadge::Downloading(percent) = download {
         let center = Pos2::new(download_x, rect.center().y);
@@ -172,17 +189,15 @@ pub fn song_row(
             response.id.with("radio"),
             Sense::click(),
         );
-        if response.hovered() {
-            ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
-        }
+        let (scale, press_t) = paint_icon_button_state(ui, app_theme, response.rect, &response);
         let response = response.on_hover_text("Start radio");
         response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, "Start radio"));
         paint_icon(
             ui.painter(),
             Pos2::new(radio_x, rect.center().y),
             "radio",
-            20.0,
-            app_theme.scheme.on_surface_variant,
+            20.0 * scale,
+            motion::pressed_color(app_theme.scheme.on_surface_variant, press_t),
         );
         response
     });
@@ -225,7 +240,6 @@ pub fn album_card(
     let width = width.max(72.0);
     let (rect, card) = ui.allocate_exact_size(Vec2::new(width, width + 56.0), Sense::click());
     let art_rect = Rect::from_min_size(rect.left_top(), Vec2::splat(width));
-    art_or_placeholder(ui, app_theme, art, art_rect, SHAPE_LARGE);
     let badge_center = art_rect.right_bottom() - Vec2::new(22.0, 22.0);
     let play_rect = Rect::from_center_size(badge_center, Vec2::splat(48.0));
     let play = ui.interact(
@@ -239,26 +253,34 @@ pub fn album_card(
         card.hovered() || play.hovered() || card.is_pointer_button_down_on(),
         motion::HOVER,
     );
+    let press_t = motion::press(
+        ui,
+        card.id.with("press"),
+        card.is_pointer_button_down_on() || play.is_pointer_button_down_on(),
+    );
+    // Content shrinks about the card centre; the allocation and the play hit
+    // rect stay put.
+    let draw = Rect::from_center_size(rect.center(), rect.size() * motion::press_scale_at(press_t));
+    let art_draw = Rect::from_min_size(draw.left_top(), Vec2::splat(draw.width()));
+    let badge_draw = art_draw.right_bottom() - Vec2::new(22.0, 22.0);
+    art_or_placeholder(ui, app_theme, art, art_draw, SHAPE_LARGE);
     if hover_t > 0.0 {
         let stroke = card_hover_stroke(app_theme);
         ui.painter().rect_stroke(
-            art_rect,
+            art_draw,
             SHAPE_LARGE,
             Stroke::new(stroke.width, stroke.color.gamma_multiply(hover_t)),
             StrokeKind::Inside,
         );
     }
     let badge_scale = motion::lerp(1.0, motion::BADGE_SCALE, hover_t);
-    ui.painter().circle_filled(
-        badge_center,
-        16.0 * badge_scale,
-        app_theme.scheme.on_surface,
-    );
+    ui.painter()
+        .circle_filled(badge_draw, 16.0 * badge_scale, app_theme.scheme.on_surface);
     ui.painter().add(Shape::convex_polygon(
         vec![
-            badge_center + Vec2::new(-4.0, -6.0) * badge_scale,
-            badge_center + Vec2::new(-4.0, 6.0) * badge_scale,
-            badge_center + Vec2::new(6.0, 0.0) * badge_scale,
+            badge_draw + Vec2::new(-4.0, -6.0) * badge_scale,
+            badge_draw + Vec2::new(-4.0, 6.0) * badge_scale,
+            badge_draw + Vec2::new(6.0, 0.0) * badge_scale,
         ],
         app_theme.scheme.surface,
         Stroke::NONE,
@@ -267,19 +289,19 @@ pub fn album_card(
 
     elided(
         ui.painter(),
-        rect.left_top() + Vec2::new(0.0, width + DP8),
+        draw.left_top() + Vec2::new(0.0, art_draw.height() + DP8),
         title,
         medium_font(15.0),
-        app_theme.scheme.on_surface,
-        width,
+        motion::pressed_color(app_theme.scheme.on_surface, press_t),
+        draw.width(),
     );
     elided(
         ui.painter(),
-        rect.left_top() + Vec2::new(0.0, width + 28.0), // art + 8 dp, 18 dp title line, 2 dp
+        draw.left_top() + Vec2::new(0.0, art_draw.height() + 28.0), // art + 8, 18 title, 2
         subtitle,
         regular_font(13.0),
         app_theme.scheme.on_surface_variant,
-        width,
+        draw.width(),
     );
     card.widget_info(|| {
         WidgetInfo::labeled(egui::Role::Button, true, format!("{title}, {subtitle}"))

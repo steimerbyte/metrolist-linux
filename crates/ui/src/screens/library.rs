@@ -357,7 +357,9 @@ pub fn show(
 
 fn liked_tile(ui: &mut Ui, theme: &Theme, count: Option<usize>, width: f32) -> bool {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 64.0), egui::Sense::click());
-    let (hover_t, _) = motion::interaction(ui, &response);
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    let scale = motion::press_scale_at(press_t);
+    let rect = egui::Rect::from_center_size(rect.center(), rect.size() * scale);
     let fill = theme
         .card()
         .lerp_to_gamma(theme.scheme.surface_container_high, hover_t);
@@ -373,14 +375,14 @@ fn liked_tile(ui: &mut Ui, theme: &Theme, count: Option<usize>, width: f32) -> b
         egui::Pos2::new(rect.left() + DP24 + DP4, rect.center().y),
         "favorite",
         22.0,
-        theme.scheme.on_surface_variant,
+        motion::pressed_color(theme.scheme.on_surface_variant, press_t),
     );
     crate::widgets::text(
         ui.painter(),
         egui::Pos2::new(rect.left() + DP48 + DP12, rect.top() + DP12),
         "Liked songs",
         medium_font(TITLE_MEDIUM),
-        theme.scheme.on_surface,
+        motion::pressed_color(theme.scheme.on_surface, press_t),
     );
     let subtitle = match count {
         Some(count) => format!("{count} {}", if count == 1 { "SONG" } else { "SONGS" }),
@@ -391,7 +393,7 @@ fn liked_tile(ui: &mut Ui, theme: &Theme, count: Option<usize>, width: f32) -> b
         egui::Pos2::new(rect.left() + DP48 + DP12, rect.top() + DP12 + 22.0),
         &subtitle,
         font_label(LABEL_SMALL),
-        theme.scheme.on_surface_variant,
+        motion::pressed_color(theme.scheme.on_surface_variant, press_t),
     );
     response.clicked()
 }
@@ -507,12 +509,9 @@ fn card_columns(width: f32) -> usize {
 /// Library header entry to the listening stats and Wrapped story.
 fn stats_entry(ui: &mut Ui, theme: &Theme, width: f32) -> bool {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 68.0), egui::Sense::click());
-    let hover_t = motion::t(
-        ui,
-        response.id.with("hover"),
-        response.hovered() || response.is_pointer_button_down_on(),
-        motion::HOVER,
-    );
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    let scale = motion::press_scale_at(press_t);
+    let rect = egui::Rect::from_center_size(rect.center(), rect.size() * scale);
     let fill = theme
         .card()
         .lerp_to_gamma(theme.scheme.surface_container_high, hover_t);
@@ -529,7 +528,7 @@ fn stats_entry(ui: &mut Ui, theme: &Theme, width: f32) -> bool {
         icon_center,
         "bar_chart",
         20.0,
-        theme.scheme.on_surface_variant,
+        motion::pressed_color(theme.scheme.on_surface_variant, press_t),
     );
     let text_x = rect.left() + DP48 + DP8;
     let text_width = (rect.right() - DP24 - DP8 - text_x).max(40.0);
@@ -538,7 +537,7 @@ fn stats_entry(ui: &mut Ui, theme: &Theme, width: f32) -> bool {
         egui::pos2(text_x, rect.top() + DP16),
         "Your stats",
         medium_font(TITLE_MEDIUM),
-        theme.scheme.on_surface,
+        motion::pressed_color(theme.scheme.on_surface, press_t),
         text_width,
     );
     crate::widgets::elided(
@@ -546,7 +545,7 @@ fn stats_entry(ui: &mut Ui, theme: &Theme, width: f32) -> bool {
         egui::pos2(text_x, rect.top() + DP16 + 21.0),
         "LISTENING TOTALS, TOP SONGS & WRAPPED",
         font_label(LABEL_SMALL),
-        theme.scheme.on_surface_variant,
+        motion::pressed_color(theme.scheme.on_surface_variant, press_t),
         text_width,
     );
     paint_icon(
@@ -554,7 +553,7 @@ fn stats_entry(ui: &mut Ui, theme: &Theme, width: f32) -> bool {
         egui::pos2(rect.right() - DP24, rect.center().y),
         "chevron_right",
         20.0,
-        theme.scheme.on_surface_variant,
+        motion::pressed_color(theme.scheme.on_surface_variant, press_t),
     );
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

@@ -63,13 +63,13 @@ fn paint_icon_button(
     icon_name: &str,
     icon_size: f32,
 ) {
-    let scale = paint_icon_button_state(ui, app_theme, rect, response);
+    let (scale, press_t) = paint_icon_button_state(ui, app_theme, rect, response);
     paint_icon(
         ui.painter(),
         rect.center(),
         icon_name,
         icon_size * scale,
-        app_theme.scheme.on_surface,
+        motion::pressed_color(app_theme.scheme.on_surface, press_t),
     );
 }
 
@@ -87,7 +87,7 @@ pub fn icon_button_at_swap(
     icon_size: f32,
 ) -> Response {
     let response = ui.interact(rect, ui.scope_id().with(id_salt), Sense::click());
-    let scale = paint_icon_button_state(ui, app_theme, rect, &response);
+    let (scale, press_t) = paint_icon_button_state(ui, app_theme, rect, &response);
     paint_icon_swap(
         ui.painter(),
         rect.center(),
@@ -95,14 +95,19 @@ pub fn icon_button_at_swap(
         to,
         mix,
         icon_size * scale,
-        app_theme.scheme.on_surface,
+        motion::pressed_color(app_theme.scheme.on_surface, press_t),
     );
     response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
     response
 }
 
-/// Hover layer, press scale and focus ring of an icon button; returns the scale.
-fn paint_icon_button_state(ui: &Ui, app_theme: &Theme, rect: Rect, response: &Response) -> f32 {
+/// Hover layer, press scale and focus ring of an icon button.
+pub(crate) fn paint_icon_button_state(
+    ui: &Ui,
+    app_theme: &Theme,
+    rect: Rect,
+    response: &Response,
+) -> (f32, f32) {
     let (hover_t, press_t) = motion::interaction(ui, response);
     let scale = motion::press_scale_at(press_t);
     if hover_t > 0.0 || press_t > 0.0 {
@@ -118,7 +123,7 @@ fn paint_icon_button_state(ui: &Ui, app_theme: &Theme, rect: Rect, response: &Re
         (rect.width().min(rect.height()) * 0.5) as u8,
         response,
     );
-    scale
+    (scale, press_t)
 }
 
 /// Filter chip: 32 dp pill, hairline frame, filled when selected.
@@ -157,6 +162,7 @@ pub fn chip(ui: &mut Ui, app_theme: &Theme, label: &str, selected: bool) -> Resp
         .scheme
         .on_surface_variant
         .lerp_to_gamma(app_theme.scheme.surface, selected_t);
+    let color = motion::pressed_color(color, press_t);
     let galley = ui.painter().layout_no_wrap(label.to_owned(), font, color);
     ui.painter()
         .galley(draw.center() - galley.size() / 2.0, galley, color);
@@ -191,7 +197,7 @@ pub fn filled_button(
         hover_t * 0.12 + press_t * 0.2,
     );
     ui.painter().rect_filled(draw, radius, fill);
-    let fg = app_theme.scheme.surface;
+    let fg = motion::pressed_color(app_theme.scheme.surface, press_t);
     let content_w = tw + extra;
     let start = draw.center().x - content_w / 2.0;
     if let Some(icon_name) = icon_name {
@@ -253,7 +259,7 @@ pub fn outlined_button(ui: &mut Ui, app_theme: &Theme, label: &str) -> Response 
         draw.center(),
         &label,
         font,
-        app_theme.scheme.on_surface,
+        motion::pressed_color(app_theme.scheme.on_surface, press_t),
     );
     motion::focus_ring(ui, draw, radius, &response);
     response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
@@ -313,7 +319,7 @@ pub fn section_header(
         draw.center(),
         label,
         font,
-        app_theme.scheme.on_surface,
+        motion::pressed_color(app_theme.scheme.on_surface, press_t),
     );
     motion::focus_ring(ui, draw, radius, &response);
     response
@@ -573,7 +579,7 @@ mod tests {
             assert!(circle.is_none());
         }
         let hover_pos = button.center();
-        // Hover settles in HOVER (0.10 s).
+        // Hover settles in HOVER (0.15 s).
         for frame in 0..3 {
             run(
                 0.2 + frame as f64 * 0.05,

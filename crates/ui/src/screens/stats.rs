@@ -183,7 +183,7 @@ fn stat_song_row(
 ) -> bool {
     let active = current.is_some_and(|song| song.id == stat.song.id);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 64.0), egui::Sense::click());
-    let active_t = motion::t(ui, response.id.with("active"), active, motion::HOVER);
+    let active_t = motion::t(ui, response.id.with("active"), active, motion::SELECT);
     let (hover_t, press_t) = motion::interaction(ui, &response);
     if active_t >= 1.0 {
         ui.painter()
@@ -195,48 +195,53 @@ fn stat_song_row(
             motion::state_layer_at(theme.scheme.surface_container_high, hover_t, press_t),
         );
     }
+    // Content shrinks about the row centre; the highlight band keeps its rect.
+    let draw =
+        egui::Rect::from_center_size(rect.center(), rect.size() * motion::press_scale_at(press_t));
     let art_rect =
-        egui::Rect::from_min_size(rect.left_top() + Vec2::new(30.0, 10.0), Vec2::splat(44.0));
+        egui::Rect::from_min_size(draw.left_top() + Vec2::new(30.0, 10.0), Vec2::splat(44.0));
     let texture = art.texture(ui.ctx(), services, &stat.song.thumb(160));
     art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 0);
+    let strong = motion::pressed_color(theme.scheme.on_surface, press_t);
+    let soft = motion::pressed_color(theme.scheme.on_surface_variant, press_t);
     text(
         ui.painter(),
-        Pos2::new(rect.left() + DP8, rect.top() + 20.0),
+        Pos2::new(draw.left() + DP8, draw.top() + 20.0),
         &rank.to_string(),
         font_label(11.0),
-        theme.scheme.on_surface_variant,
+        soft,
     );
     let text_x = art_rect.right() + DP8;
-    let right = rect.right() - DP8;
+    let right = draw.right() - DP8;
     crate::widgets::elided(
         ui.painter(),
-        Pos2::new(text_x, rect.top() + 10.0),
+        Pos2::new(text_x, draw.top() + 10.0),
         &stat.song.title,
         font_medium(14.0),
-        theme.scheme.on_surface,
+        strong,
         (right - 82.0 - text_x).max(20.0),
     );
     crate::widgets::elided(
         ui.painter(),
-        Pos2::new(text_x, rect.top() + 31.0),
+        Pos2::new(text_x, draw.top() + 31.0),
         &stat.song.artist_names(),
         font_regular(12.0),
-        theme.scheme.on_surface_variant,
+        soft,
         (right - 82.0 - text_x).max(20.0),
     );
     ui.painter().text(
-        Pos2::new(right, rect.top() + 12.0),
+        Pos2::new(right, draw.top() + 12.0),
         Align2::RIGHT_TOP,
         format!("{} PLAYS", stat.plays),
         font_label(11.0),
-        theme.scheme.on_surface,
+        strong,
     );
     ui.painter().text(
-        Pos2::new(right, rect.top() + 33.0),
+        Pos2::new(right, draw.top() + 33.0),
         Align2::RIGHT_TOP,
         listening_time_text(stat.ms),
         font_label(11.0),
-        theme.scheme.on_surface_variant,
+        soft,
     );
     response.widget_info(|| {
         egui::WidgetInfo::labeled(
@@ -281,12 +286,14 @@ fn stat_media_row(
         .unwrap_or_default();
     let texture = art.texture(ui.ctx(), services, &url);
     art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 0);
+    let strong = motion::pressed_color(theme.scheme.on_surface, press_t);
+    let soft = motion::pressed_color(theme.scheme.on_surface_variant, press_t);
     text(
         ui.painter(),
         Pos2::new(rect.left() + DP8, rect.top() + 19.0),
         &rank.to_string(),
         font_label(11.0),
-        theme.scheme.on_surface_variant,
+        soft,
     );
     let text_x = art_rect.right() + DP8;
     let right = rect.right() - DP8;
@@ -295,7 +302,7 @@ fn stat_media_row(
         Pos2::new(text_x, rect.top() + 9.0),
         title,
         font_medium(14.0),
-        theme.scheme.on_surface,
+        strong,
         (right - 82.0 - text_x).max(20.0),
     );
     crate::widgets::elided(
@@ -303,7 +310,7 @@ fn stat_media_row(
         Pos2::new(text_x, rect.top() + 30.0),
         subtitle,
         font_regular(12.0),
-        theme.scheme.on_surface_variant,
+        soft,
         (right - 82.0 - text_x).max(20.0),
     );
     ui.painter().text(
@@ -311,14 +318,14 @@ fn stat_media_row(
         Align2::RIGHT_TOP,
         format!("{plays} PLAYS"),
         font_label(11.0),
-        theme.scheme.on_surface,
+        strong,
     );
     ui.painter().text(
         Pos2::new(right, rect.top() + 32.0),
         Align2::RIGHT_TOP,
         listening_time_text(ms),
         font_label(11.0),
-        theme.scheme.on_surface_variant,
+        soft,
     );
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{title} — {plays} plays"))

@@ -34,9 +34,11 @@ ease-out range (100–250 ms); unused steps are not declared.
 
 | Token | Value | Used for |
 |---|---|---|
-| `HOVER` | 0.10 | state layer, press scale, thumb, focus ring |
-| `PRESS` | 0.10 | alias of `HOVER`, names the press intent |
-| `SELECT` | 0.15 | chip/nav selection morph, skeleton fade, icon swap |
+| `HOVER` | 0.15 | state layer, thumb, focus ring; raw egui widgets via `animation_time` |
+| `PRESS_IN` | 0.09 | press ramp in: scale 0.98 + content alpha |
+| `PRESS_OUT` | 0.15 | press ramp out on release |
+| `SELECT` | 0.20 | chip/nav selection morph, active-row fade, skeleton, icon swap |
+| `PLAYER` | 0.10 | play/pause glyph swap (high-frequency control) |
 | `ENTER` | 0.20 | route enter, lyrics fill |
 | `EXIT` | 0.20 | toast fade-out (the only exit in this pass) |
 | `MODAL` | 0.25 | queue dialog, player open, mini player |
@@ -85,9 +87,11 @@ containers use `secondary_container`/`on_secondary_container`, focus uses
 ## Runtime model (`crates/ui/src/motion.rs`)
 
 ```rust
-pub const HOVER: f32 = 0.10;
-pub const PRESS: f32 = 0.10;
-pub const SELECT: f32 = 0.15;
+pub const HOVER: f32 = 0.15;
+pub const PRESS_IN: f32 = 0.09;
+pub const PRESS_OUT: f32 = 0.15;
+pub const SELECT: f32 = 0.20;
+pub const PLAYER: f32 = 0.10;
 pub const ENTER: f32 = 0.20;
 pub const EXIT: f32 = 0.20;
 pub const MODAL: f32 = 0.25;
@@ -181,12 +185,12 @@ place hover/pressed states are captured.
 |---|---|---|---|
 | Route & tab enter (`app.rs` `route_content`, `shell`) | new screen fades 0→1; content column slides `ROUTE_SLIDE` from the travel side (X for tabs/push/back) | 200 ms `emphasized` | 60 fps for 200 ms, then none |
 | Player open (`app.rs` `ui`) | full-window fade + scale `PLAYER_SCALE`→1 about the screen centre; close snaps | 250 ms `emphasized` | 60 fps for 250 ms |
-| Icon button (`controls.rs`) | state layer 8 %/12 %, press scale 0.98, focus ring 2 dp `primary` | 100 ms `emphasized` | 60 fps for 100 ms |
-| Filled / outlined / "Play all" buttons | same state layer + press scale; hover border stays 1 dp | 100 ms | 60 fps for 100 ms |
-| FAB play/pause (`controls.rs`, `player.rs`) | state layer + press scale; glyph crossfade (see icon swap) | 100 ms / 150 ms | 60 fps for 150 ms |
-| Chip (`controls.rs` `chip`) | hover/press layer; selected fill + radius morph 8→16 dp (full pill); label colour lerp | 150 ms `emphasized` | 60 fps for 150 ms |
+| Icon button (`controls.rs`) | state layer 8 %/12 %, press scale 0.98, content alpha 255→230, focus ring 2 dp `primary` | hover 150 ms, press 90 ms in / 150 ms out, focus 150 ms | 60 fps for 150 ms |
+| Filled / outlined / "Play all" buttons | same state layer + press scale + content alpha; hover border stays 1 dp | hover 150 ms, press 90/150 ms | 60 fps for 150 ms |
+| Play/pause pill (`player.rs` `play_pill`) and mini-player swap | state layer + press scale + content alpha; glyph crossfade 100 ms | hover 150 ms, press 90/150 ms, swap 100 ms | 60 fps for 150 ms |
+| Chip (`controls.rs` `chip`) | hover/press layer; selected fill + radius morph 8→16 dp (full pill); label colour lerp | hover 150 ms, selected 200 ms | 60 fps for 200 ms |
 | Nav item (`controls.rs` `nav_item`) | selected pill grows 32×28→56×32 dp, fill fades in, icon/label colour lerp; hover layer on the unselected pill | 150 ms `emphasized` | 60 fps for 150 ms |
-| Song row (`rows.rs` `song_row`) | hover 8 % / press 12 % fill fade; active-row fill fade | 100 ms | 60 fps for 100 ms |
+| Song row (`rows.rs` `song_row`) and its sub-actions | hover 8 % / press 12 % fill fade; active-row fade 200 ms; icons as icon buttons | hover 150 ms, active 200 ms | 60 fps for 200 ms |
 | Album card (`rows.rs` `album_card`) | hover border alpha 0→1; play badge scale 1→`BADGE_SCALE`, black alpha 160→210 | 100 ms | 60 fps for 100 ms |
 | Mini player (`shell/mod.rs`) | card fades in and scales 0.98→1 inside its slot when the first song appears. Panel height is **not** animated (see below) | 250 ms `decelerate` | 60 fps for 250 ms |
 | Toast (`feedback.rs` `Toasts`) | in: fade + 8 dp rise; out: fade over the last 200 ms of `remaining` (no state, derived from the timer) | 150 ms in / 200 ms out, linear | 10 fps countdown; 60 fps only inside a fade window |
@@ -198,7 +202,7 @@ place hover/pressed states are captured.
 | Slider (`controls.rs`) | thumb radius 6→7.5 dp on hover/drag; press ring; **seek display smoothing stays with ui-functional** (`progress_slider`) | 100 ms | 60 fps for 100 ms |
 | Vinyl (`player.rs`) | unchanged 10°/s spin; pause freezes; reduced motion keeps it still | continuous | 60 fps while playing (existing) |
 | Playing bars (`rows.rs`) | three phase-shifted sine heights (8/14/10 ±3 dp) instead of static bars | 1.1 s loop | 60 fps while the queue dialog is open and playing |
-| Focus ring (all custom widgets) | 2 dp `primary` ring, 100 ms fade to solid; also on pressed | 100 ms | 60 fps for 100 ms |
+| Focus ring (all custom widgets) | 2 dp `primary` ring, 150 ms fade to solid; also on pressed | 150 ms | 60 fps for 150 ms |
 
 Deliberate omissions, with reasons:
 
@@ -217,7 +221,8 @@ Deliberate omissions, with reasons:
 
 ## Interruption & reversal rules
 
-1. Every hover/press/selection animation is a bool target. A new target while
+1. Hover/selection are bool targets, press is an asymmetric ramp (90 ms in,
+   150 ms out); the first call for an id returns the target. A new target while
    the old one runs continues from the current value (rate based), so
    hover→press→release never jumps or queues.
 2. No effect owns a queue. Repeating an interaction re-targets that element's

@@ -117,11 +117,16 @@ pub fn top_bar(
         5.0,
         app_theme.scheme.on_surface_variant,
     );
-    if avatar.hovered() {
+    let (avatar_hover_t, avatar_press_t) = motion::interaction(ui, &avatar);
+    if avatar_hover_t > 0.0 || avatar_press_t > 0.0 {
         ui.painter().circle_stroke(
             avatar_center,
             16.0,
-            egui::Stroke::new(1.0, app_theme.scheme.outline),
+            egui::Stroke::new(
+                1.0,
+                motion::pressed_color(app_theme.scheme.outline, avatar_press_t)
+                    .gamma_multiply(avatar_hover_t),
+            ),
         );
     }
     motion::focus_ring(ui, avatar_rect, 20, &avatar);
@@ -266,7 +271,7 @@ pub fn mini_player(
         ui,
         egui::Id::unique("mini_play_mix"),
         playing,
-        motion::SELECT,
+        motion::PLAYER,
     );
     let toggle = icon_button_at_swap(
         ui,
@@ -439,7 +444,7 @@ enum Edge {
 }
 
 /// One navigation destination: icon over an uppercase mono label. Nothing OS
-/// has no pill; selection is a hard 2 px line on the bar's inner edge.
+/// has no pill; selection is a 2 px line on the bar's inner edge that fades in.
 fn nav_destination(
     ui: &mut Ui,
     app_theme: &Theme,
@@ -450,32 +455,40 @@ fn nav_destination(
     edge: Edge,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    if selected {
+    let (hover_t, press_t) = motion::interaction(ui, &response);
+    let active_t = motion::t(ui, response.id.with("active"), selected, motion::SELECT);
+    let scale = motion::press_scale_at(press_t);
+    if active_t > 0.0 {
         let line = match edge {
             Edge::Left => Rect::from_min_size(rect.min, Vec2::new(2.0, rect.height())),
             Edge::Top => Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)),
         };
-        ui.painter()
-            .rect_filled(line, 0, app_theme.scheme.on_surface);
+        ui.painter().rect_filled(
+            line,
+            0,
+            app_theme.scheme.on_surface.gamma_multiply(active_t),
+        );
     }
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    let color = if selected || response.hovered() {
-        app_theme.scheme.on_surface
-    } else {
-        app_theme.scheme.on_surface_variant
-    };
+    let color = app_theme
+        .scheme
+        .on_surface_variant
+        .lerp_to_gamma(app_theme.scheme.on_surface, hover_t.max(active_t));
+    let color = motion::pressed_color(color, press_t);
     // Icon 22 + 8 gap + label 11 = 41 dp, centred in the destination.
     let stack = rect.top() + (rect.height() - 41.0) * 0.5;
     paint_icon(
         ui.painter(),
         Pos2::new(rect.center().x, stack + 11.0),
         icon_name,
-        22.0,
+        22.0 * scale,
         color,
     );
     let label = label.to_uppercase();
+    // Fixed font size: scaling the label re-rasterises glyphs at every press
+    // value. The icon scale and the dimmed colour carry the press instead.
     let galley = ui
         .painter()
         .layout_no_wrap(label.clone(), font_label(LABEL_SMALL), color);

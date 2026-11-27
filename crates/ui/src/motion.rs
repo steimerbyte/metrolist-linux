@@ -2,21 +2,27 @@
 //!
 //! Interaction state uses egui's rate-based `animate_bool_with_time_and_easing`:
 //! a reversed animation continues from its current value, nothing queues, and a
-//! repaint is requested only while a value is between 0 and 1. One-shot
-//! entrances (routes, skeletons, dialogs) use [`appear`]/[`progress`] instead,
-//! because the first `animate_bool` call for an id returns the target instantly.
+//! repaint is requested only while a value is between 0 and 1. Press progress
+//! uses [`press`] because its ramp is asymmetric (90 ms in, 150 ms out).
+//! One-shot entrances (routes, skeletons, dialogs) use [`appear`]/[`progress`]
+//! instead, because the first `animate_bool` call for an id returns the target
+//! instantly.
 //!
 //! Reduced motion is a context flag written by `Theme::install`; every helper
 //! reads it and collapses its duration to zero, which egui snaps.
 
 use eframe::egui::{Color32, Context, Id, Rect, Response, Stroke, StrokeKind, Ui};
 
-/// State layer, press scale, thumb and focus-ring time (M3 short2).
-pub const HOVER: f32 = 0.10;
-/// Same duration as [`HOVER`], named for the press intent.
-pub const PRESS: f32 = 0.10;
+/// State layer, thumb and focus-ring time (M3 short2).
+pub const HOVER: f32 = 0.15;
+/// Press-in ramp: the scale and content fade reach full after 90 ms.
+pub const PRESS_IN: f32 = 0.09;
+/// Press-out ramp: the release eases back over 150 ms.
+pub const PRESS_OUT: f32 = 0.15;
 /// Chip/nav selection morph, skeleton fade, icon swap (M3 short3).
-pub const SELECT: f32 = 0.15;
+pub const SELECT: f32 = 0.20;
+/// Play/pause glyph swap (M3 short2 fast).
+pub const PLAYER: f32 = 0.10;
 /// Route enter and lyric fill (M3 short4).
 pub const ENTER: f32 = 0.20;
 /// Toast fade-out; the only exit in the current design (M3 short4).
@@ -160,6 +166,47 @@ pub fn t(ui: &Ui, id: Id, on: bool, secs: f32) -> f32 {
         .animate_bool_with_time_and_easing(id, on, secs, emphasized)
 }
 
+/// Linear press progress plus the frame time it was last advanced.
+#[derive(Clone, Copy)]
+struct PressAnim {
+    value: f32,
+    tick: f64,
+}
+
+/// Asymmetric press progress for a held control, eased by [`emphasized`].
+///
+/// Ramps in over [`PRESS_IN`] and back out over [`PRESS_OUT`], so a release
+/// never snaps. The first call for an `id` returns the target, and reduced
+/// motion returns the target every frame. Repaints while the fade is moving.
+pub fn press(ui: &Ui, id: Id, pressed: bool) -> f32 {
+    let target = if pressed { 1.0 } else { 0.0 };
+    if reduced(ui.ctx()) {
+        return target;
+    }
+    let (now, dt) = ui.input(|input| (input.time, input.stable_dt));
+    let value = ui.data_mut(|data| {
+        let anim = data.get_temp_mut_or_insert_with(id, || PressAnim {
+            value: target,
+            tick: now,
+        });
+        // Clamp like egui's animate_bool: a stalled frame must not jump the
+        // fade, and a second call in the same frame must not advance it twice.
+        let elapsed = ((now - anim.tick) as f32).min(dt);
+        let delta = if pressed {
+            elapsed / PRESS_IN
+        } else {
+            -elapsed / PRESS_OUT
+        };
+        anim.value = (anim.value + delta).clamp(0.0, 1.0);
+        anim.tick = now;
+        anim.value
+    });
+    if value != target {
+        ui.ctx().request_repaint();
+    }
+    emphasized(value)
+}
+
 /// State-layer tint for explicit hover/press amounts (pure).
 pub fn state_layer_at(base: Color32, hover_t: f32, press_t: f32) -> Color32 {
     let hover_t = hover_t.clamp(0.0, 1.0);
@@ -173,7 +220,7 @@ pub fn interaction(ui: &Ui, response: &Response) -> (f32, f32) {
     let hovered = response.hovered() || response.is_pointer_button_down_on();
     let pressed = response.is_pointer_button_down_on();
     let hover_t = t(ui, response.id.with("hover"), hovered, HOVER);
-    let press_t = t(ui, response.id.with("press"), pressed, PRESS);
+    let press_t = press(ui, response.id.with("press"), pressed);
     (hover_t, press_t)
 }
 
@@ -185,17 +232,26 @@ pub fn state_layer(ui: &Ui, base: Color32, response: &Response) -> Color32 {
 
 /// Animated press scale; 1 at rest, [`PRESS_SCALE`] while held.
 pub fn press_scale(ui: &Ui, response: &Response) -> f32 {
-    press_scale_at(t(
+    press_scale_at(press(
         ui,
         response.id.with("press"),
         response.is_pointer_button_down_on(),
-        PRESS,
     ))
 }
 
 /// Press scale for an explicit animation value (pure).
 pub fn press_scale_at(t: f32) -> f32 {
     lerp(1.0, PRESS_SCALE, t.clamp(0.0, 1.0))
+}
+
+/// Content colour of a held control: rgb kept, alpha 255 -> 230.
+///
+/// The rgb stays unmultiplied so only the paint alpha dims the content; a
+/// widget must not swap its colour for this, the same call returns `base` at 0.
+pub fn pressed_color(base: Color32, press_t: f32) -> Color32 {
+    let [r, g, b, a] = base.to_srgba_unmultiplied();
+    let a = lerp(a as f32, 230.0, press_t.clamp(0.0, 1.0)).round() as u8;
+    Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
 /// Keyboard focus ring: 2 dp inside the control, fading in over [`HOVER`].
@@ -342,5 +398,83 @@ mod tests {
         assert_eq!(first, 0.0);
         assert!(later > 0.0 && later < 1.0, "expected mid-fade, got {later}");
         assert_eq!(instant, 1.0);
+    }
+
+    #[test]
+    fn motion_tokens_are_the_house_values() {
+        assert_eq!(HOVER, 0.15);
+        assert_eq!(PRESS_IN, 0.09);
+        assert_eq!(PRESS_OUT, 0.15);
+        assert_eq!(SELECT, 0.20);
+        assert_eq!(PLAYER, 0.10);
+        assert_eq!(PRESS_SCALE, 0.98);
+    }
+
+    #[test]
+    fn press_ramps_in_fast_and_out_slow() {
+        const STEP: f32 = 0.01;
+        let ctx = Context::default();
+        let id = Id::unique("press_ramp");
+        let sample = |time: f64, pressed: bool| {
+            let mut value = -1.0;
+            let mut output = ctx.run_ui(
+                RawInput {
+                    predicted_dt: STEP,
+                    ..raw_input(time)
+                },
+                |ctx| {
+                    CentralPanel::default().show(ctx, |ui| {
+                        value = press(ui, id, pressed);
+                    });
+                },
+            );
+            output.textures_delta.clear();
+            value
+        };
+        assert_eq!(sample(0.0, false), 0.0, "first call returns the target");
+        let mut held = 0.0;
+        for frame in 1..=9 {
+            held = sample(frame as f64 * 0.01, true);
+        }
+        assert!(held > 0.99, "90 ms of holding must settle: {held}");
+        let mut released = 0.0;
+        for frame in 1..=9 {
+            released = sample(0.09 + frame as f64 * 0.01, false);
+        }
+        assert!(
+            released > 0.05 && released < 1.0,
+            "90 ms after release is still fading: {released}"
+        );
+        let mut done = -1.0;
+        for frame in 10..=15 {
+            done = sample(0.09 + frame as f64 * 0.01, false);
+        }
+        assert_eq!(done, 0.0, "150 ms after release must settle");
+    }
+
+    #[test]
+    fn press_snaps_with_reduced_motion() {
+        let ctx = Context::default();
+        let id = Id::unique("press_reduced");
+        let mut held = -1.0;
+        let mut released = -1.0;
+        let mut output = ctx.run_ui(raw_input(0.0), |ctx| {
+            CentralPanel::default().show(ctx, |ui| {
+                set_reduced(ui.ctx(), true);
+                held = press(ui, id, true);
+                released = press(ui, id, false);
+            });
+        });
+        output.textures_delta.clear();
+        assert_eq!(held, 1.0);
+        assert_eq!(released, 0.0, "the release snaps on the same frame");
+    }
+
+    #[test]
+    fn pressed_color_keeps_rgb_and_fades_alpha_to_230() {
+        let base = Color32::from_rgb(100, 100, 100);
+        assert_eq!(pressed_color(base, 0.0), base);
+        let pressed = pressed_color(base, 1.0);
+        assert_eq!(pressed.to_srgba_unmultiplied(), [100, 100, 100, 230]);
     }
 }
