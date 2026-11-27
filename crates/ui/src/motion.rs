@@ -9,7 +9,7 @@
 //! Reduced motion is a context flag written by `Theme::install`; every helper
 //! reads it and collapses its duration to zero, which egui snaps.
 
-use eframe::egui::{Color32, Context, Id, Rect, Response, Stroke, StrokeKind, Ui, Vec2};
+use eframe::egui::{Color32, Context, Id, Rect, Response, Stroke, StrokeKind, Ui};
 
 /// State layer, press scale, thumb and focus-ring time (M3 short2).
 pub const HOVER: f32 = 0.10;
@@ -221,7 +221,7 @@ pub fn focus_ring(ui: &Ui, rect: Rect, radius: u8, response: &Response) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eframe::egui::{CentralPanel, Pos2, RawInput};
+    use eframe::egui::{CentralPanel, Pos2, RawInput, Vec2};
 
     fn raw_input(time: f64) -> RawInput {
         RawInput {

@@ -308,11 +308,10 @@ cookie file). The per-package split in the 0.1.2 section was not re-measured;
   (`PlayerAction::StartRadio`): immediately right of Repeat, with an active dot
   for a `QueueSource::Radio` queue.
 - **Progress timeline** — `widgets/waveform.rs::waveform_slider` on the shared
-  `controls.rs::seek_gesture`: 2 dp bars at a 3 dp pitch (bins from the band
-  width), listed heights from a stable seed, the Nothing dot dither over a base
-  fill (played 0.3/0.55, unplayed 0.2/0.4, 1-px caps top and bottom),
-  hover/drag time bubble, one seek on release, bars cached once per track and
-  width.
+  `controls.rs::seek_gesture`: hollow bars — 1 px rim, two interior columns of
+  ordered 16x16 Bayer dots (50 % top to 10 % bottom, 2-level 0/255), 4 dp bar
+  at a 5 dp pitch, played rim `on_surface` and unplayed rim L=95, hover/drag
+  time bubble, one seek on release, bars cached once per track and width.
 - **Liked Songs Play All** — `app.rs::Intent::PlayAll` and `screens/liked.rs`:
   immediate snapshot and mini player; delegates the radio decision to the
   proven `pure::play_starts_radio`, so a one-song liked list does not become
