@@ -582,6 +582,19 @@ impl App {
     }
 
     /// Park the player demo one minute in so screenshot evidence shows real fill.
+    /// Screenshot fixture: a fresh profile has no session to stream the demo
+    /// track, so the docs shot still reads as the approved "played at 1:01".
+    fn demo_position(&self, position_ms: u64) -> u64 {
+        if matches!(self.mode, RunMode::Screenshot { .. })
+            && matches!(self.demo, Some(DemoMode::Player))
+            && position_ms == 0
+        {
+            60_000
+        } else {
+            position_ms
+        }
+    }
+
     fn demo_seek_once(&mut self) {
         if self.demo_seeked {
             return;
@@ -3436,8 +3449,14 @@ impl App {
         let width = (screen_width - 48.0).min(560.0).max(240.0);
         let theme = self.theme.clone();
         let current = self.snapshot.current.clone();
+        // Screenshot fixture: with no session there is no stream, so the demo
+        // still renders as a playing track instead of a buffering one.
+        let demo_shot = matches!(self.mode, RunMode::Screenshot { .. })
+            && matches!(self.demo, Some(DemoMode::Player));
         let status = if self.playback_error.is_some() {
             PlaybackStatus::Error
+        } else if demo_shot {
+            PlaybackStatus::Playing
         } else {
             self.snapshot.status
         };
@@ -3447,10 +3466,10 @@ impl App {
         center_column(ui, width, |ui| {
             let view = player::PlayerView {
                 song: current.as_ref(),
-                playing: snapshot.is_playing(),
+                playing: demo_shot || snapshot.is_playing(),
                 status,
                 error: self.playback_error.as_deref(),
-                position_ms: snapshot.position_ms,
+                position_ms: self.demo_position(snapshot.position_ms),
                 duration_ms: snapshot.duration_ms,
                 shuffle: snapshot.shuffle,
                 repeat: snapshot.repeat,
@@ -3544,7 +3563,9 @@ impl App {
                     }
                     Some(DemoMode::Player) => {
                         self.demo_seek_once();
-                        self.snapshot
+                        // The screenshot fixture supplies the position itself.
+                        matches!(self.mode, RunMode::Screenshot { .. })
+                            || self.snapshot
                             .current
                             .as_ref()
                             .is_some_and(|song| song.id == Self::DEMO_SONG_ID)

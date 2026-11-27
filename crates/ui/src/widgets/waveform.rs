@@ -1,4 +1,4 @@
-//! Player waveform: hollow bars, 1 px outline, ordered Bayer dots inside.
+//! Player waveform: solid bars over a fine ordered Bayer band.
 //!
 //! shortcut: no real samples — mpv exposes no cheap PCM window over its IPC
 //! socket, so heights come from a stable hash of the song id and are cached
@@ -7,31 +7,27 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, CursorIcon, Id, Mesh, Pos2, Rect, Sense, Ui, Vec2};
+use eframe::egui::{self, Color32, CursorIcon, Id, Pos2, Rect, Sense, Ui, Vec2};
 use egui::WidgetInfo;
 use ml_core::format_position;
 
-use super::{seek_bubble, seek_gesture, ProgressSliderResponse};
+use super::{bayer_band, seek_bubble, seek_gesture, ProgressSliderResponse};
 use crate::theme::Theme;
 
-/// Bar pitch: a 4 dp bar (outline, hollow inside) with a 1 dp gap.
-pub const PITCH: f32 = 5.0;
-/// Width of one bar: two 1 px outlines around two interior columns.
-const BAR_WIDTH: f32 = 4.0;
-/// Interior columns: the ordered matrix needs more than one column to read.
-const INTERIOR: usize = 2;
+/// Bar pitch: a 2 dp bar with a 1 dp gap. The bar count follows the width.
+pub const PITCH: f32 = 3.0;
+/// Width of one bar.
+const BAR_WIDTH: f32 = 2.0;
 /// Waveform band height in dp.
 pub const WAVE_HEIGHT: f32 = 80.0;
-/// Dot density at the top and the bottom of every bar.
-const DENSITY_TOP: f32 = 0.5;
-const DENSITY_BOTTOM: f32 = 0.1;
 /// Shortest bar so quiet passages still show a bar.
 const MIN_BAR: f32 = 6.0;
-/// Unplayed outlines recede but stay readable on black.
-const UNPLAYED_OUTLINE: Color32 = Color32::from_gray(95);
+/// The grain behind the bars: a 2 pt Bayer checker at 6 %, never a raster
+/// that competes with the bars.
+const BAND_STRENGTH: f32 = 0.08;
 
-/// Seek control drawn as a dithered bar waveform. Returns the same response
-/// shape as the line slider it replaces.
+/// Seek control drawn as a bar waveform. Returns the same response shape as
+/// the line slider it replaces.
 pub fn waveform_slider(
     ui: &mut Ui,
     app_theme: &Theme,
@@ -46,56 +42,38 @@ pub fn waveform_slider(
     let bins = bins_for_width(rect.width());
     let bars = wave_bars(ui.ctx(), song_id, bins);
     let painter = ui.painter();
+    // The dither sits behind the bars, so a bar never falls apart into dots.
+    bayer_band(painter, rect, BAND_STRENGTH);
     // Integer edges: a half-pixel bar grew to three feathered columns.
     let left = rect.left().round();
     let center = rect.center().y.round();
-    let band_top = (center - (rect.height() / 2.0).round()) as usize;
-    let band_rows = rect.height().max(2.0) as usize;
-    let bayer = bayer16();
-    let mut played_edges = Mesh::default();
-    let mut unplayed_edges = Mesh::default();
-    let mut dots = Mesh::default();
     for (index, amplitude) in bars.iter().enumerate() {
         let x = left + index as f32 * PITCH;
-        let height = (MIN_BAR + amplitude * (rect.height() - MIN_BAR)).round().max(3.0) as usize;
-        let top = (center - (height as f32 / 2.0).round()) as usize;
+        let height = (MIN_BAR + amplitude * (rect.height() - MIN_BAR)).round().max(2.0);
+        let top = center - (height / 2.0).round();
+        let bar = Rect::from_min_max(Pos2::new(x, top), Pos2::new(x + BAR_WIDTH, top + height));
         let played = bin_is_played(index, bins, gesture.shown);
-        let outline = if played {
-            &mut played_edges
-        } else {
-            &mut unplayed_edges
-        };
-        let edge = if played {
+        let body = if played {
             app_theme.scheme.on_surface
         } else {
-            UNPLAYED_OUTLINE
+            app_theme.scheme.on_surface_variant
         };
-        // Hollow: four 1 px edges, black inside, dots only between them.
-        let pixel = |x: f32, y: usize| {
-            Rect::from_min_size(Pos2::new(x, y as f32), Vec2::splat(1.0))
-        };
-        for row in 0..height {
-            outline.add_colored_rect(pixel(x, top + row), edge);
-            outline.add_colored_rect(pixel(x + BAR_WIDTH - 1.0, top + row), edge);
-        }
-        for column in 1..BAR_WIDTH as usize - 1 {
-            outline.add_colored_rect(pixel(x + column as f32, top), edge);
-            outline.add_colored_rect(pixel(x + column as f32, top + height - 1), edge);
-        }
-        // Two-level dots, ordered matrix, half at the top and a tenth at the bottom.
-        for column in 1..=INTERIOR {
-            for row in 1..height.saturating_sub(1) {
-                let value = bayer[(top + row) & 15][(x as usize + column) & 15];
-                let row_in_band = top + row - band_top;
-                if dot_lit(row_in_band, band_rows, value) {
-                    dots.add_colored_rect(pixel(x + column as f32, top + row), Color32::WHITE);
-                }
-            }
+        painter.rect_filled(bar, 0, body);
+        // 1-px caps: a played tip sits one step brighter than its body and
+        // stays crisp against the grain behind it.
+        if played {
+            painter.rect_filled(
+                Rect::from_min_max(bar.left_top(), Pos2::new(bar.right(), top + 1.0)),
+                0,
+                Color32::WHITE,
+            );
+            painter.rect_filled(
+                Rect::from_min_max(Pos2::new(x, top + height - 1.0), bar.right_bottom()),
+                0,
+                Color32::WHITE,
+            );
         }
     }
-    painter.add(egui::Shape::mesh(played_edges));
-    painter.add(egui::Shape::mesh(unplayed_edges));
-    painter.add(egui::Shape::mesh(dots));
     if let Some((pointer, preview_ms)) = gesture.hover {
         seek_bubble(painter, app_theme, rect, pointer, preview_ms);
     }
@@ -119,35 +97,9 @@ pub fn waveform_slider(
     }
 }
 
-/// Bars that fit the band at the 5 dp pitch (4 dp bar + 1 dp gap).
+/// Bars that fit the band at the 3 dp pitch (2 dp bar + 1 dp gap).
 pub fn bins_for_width(width: f32) -> usize {
     ((width / PITCH).floor() as usize).clamp(1, 160)
-}
-
-/// The ordered 16x16 Bayer matrix: every threshold 0-255 exactly once.
-fn bayer16() -> [[u8; 16]; 16] {
-    let mut matrix = [[0u8; 16]; 16];
-    for (y, row) in matrix.iter_mut().enumerate() {
-        for (x, cell) in row.iter_mut().enumerate() {
-            let mut value = 0u32;
-            for bit in (0..4).rev() {
-                let xb = (x >> bit) & 1;
-                let yb = (y >> bit) & 1;
-                value = (value << 2) | (((xb ^ yb) as u32) << 1) | yb as u32;
-            }
-            *cell = value as u8;
-        }
-    }
-    matrix
-}
-
-/// Dot on/off for one interior pixel: 50 % at the top of the band, 10 % at the
-/// bottom, always decided by the ordered matrix so there is no noise.
-fn dot_lit(row: usize, rows: usize, bayer: u8) -> bool {
-    let span = rows.saturating_sub(1).max(1) as f32;
-    let t = row as f32 / span;
-    let density = DENSITY_TOP + (DENSITY_BOTTOM - DENSITY_TOP) * t;
-    (bayer as f32) < density * 256.0
 }
 
 /// Bars left of the played fraction.
@@ -228,41 +180,13 @@ mod tests {
     }
 
     #[test]
-    fn bins_follow_the_five_dp_pitch() {
-        // 330 dp band (405 px window): 66 bars of 4 dp + 1 dp gap.
-        assert_eq!(bins_for_width(330.0), 66);
-        assert_eq!(bins_for_width(331.5), 66);
-        assert_eq!(bins_for_width(460.0), 92);
+    fn bins_follow_the_three_dp_pitch() {
+        // 330 dp band (405 px window): 110 bars of 2 dp + 1 dp gap.
+        assert_eq!(bins_for_width(330.0), 110);
+        assert_eq!(bins_for_width(331.5), 110);
+        assert_eq!(bins_for_width(460.0), 153);
         assert_eq!(bins_for_width(1.0), 1);
         assert_eq!(bins_for_width(10_000.0), 160);
-    }
-
-    #[test]
-    fn the_bayer_matrix_is_ordered_and_complete() {
-        let matrix = bayer16();
-        let mut seen = [false; 256];
-        for row in matrix {
-            for value in row {
-                assert!(!seen[value as usize], "threshold {value} twice");
-                seen[value as usize] = true;
-            }
-        }
-        assert!(seen.iter().all(|hit| *hit), "every threshold appears");
-        // The 2x2 sub-cell is the classic [[0, 2], [3, 1]].
-        assert_eq!([matrix[0][0], matrix[0][8], matrix[8][0], matrix[8][8]], [0, 128, 192, 64]);
-    }
-
-    #[test]
-    fn dots_thin_out_from_half_to_a_tenth() {
-        let top = (0..256).filter(|b| dot_lit(0, 80, *b as u8)).count();
-        let bottom = (0..256).filter(|b| dot_lit(79, 80, *b as u8)).count();
-        assert_eq!(top, 128, "the top row is half lit");
-        assert_eq!(bottom, 26, "the bottom row is a tenth lit");
-        let mean = (0..80)
-            .map(|row| (0..256).filter(|b| dot_lit(row, 80, *b as u8)).count())
-            .sum::<usize>() as f32
-            / (80.0 * 256.0);
-        assert!((mean - 0.3).abs() < 0.01, "interior mean {mean}");
     }
 
     #[test]

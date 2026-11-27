@@ -5,7 +5,7 @@
 | file | sha256 (at freeze) |
 |------|--------------------|
 | crates/ui/src/services.rs | bb2e7c16136a3f9c0e87af06f75c8b85e2009cbed5197dcfd797aeaed5570df8 |
-| crates/ui/src/app.rs | 7a69076b22fb1290509099dbd9e3b2735c1ac019c9ddcaf7fef134064feaa17c |
+| crates/ui/src/app.rs | 2a6664d86d06227ec97bba98bcd75b5e1444b90a85cc8ab07d6e56150d4f6d97 |
 | crates/innertube/src/lib.rs | 5ce472ec2fec2dc42c766ea4d6849641395e84f384daaa7e6a38338f18aa1123 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
@@ -42,6 +42,11 @@ surrounding code changed. Everything else in these files is outside this area.
 - `lib.rs`: `SearchFilter`, `SearchFilter::params` and `search_body` are the
   proven items; `cookie-auth` landed the cookie transport in the same file
   (frozen at its `bfa89ea5…` stable point, search body untouched).
+- Re-freeze 2026-11-27 (fifth): the player screenshot fixture added
+  `App::demo_position` and a `demo_shot` gate that pins the demo position to
+  60 000 ms and renders status/transport as playing under
+  `RunMode::Screenshot` + `DemoMode::Player`; `url_route`, its call sites and
+  every proven body are byte-identical to `HEAD` (sha256 compared).
 
 ## Model deviations
 

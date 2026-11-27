@@ -76,7 +76,7 @@ dependencies.
 
 The manifest is packaging provenance, not the proof freeze. After the
 home-view work (2026-11-27) the working tree is **275 files**, self-sha
-`f5e03d08b0f1c44d360114be178b0973573c7aa2a6810c0d4e00c6536fe05fd2`, and
+`574ee84cfeeb793679312f2a2636145328b56ac39981e40827198134c6820f06`, and
 `sha256sum -c --quiet docs/SOURCE-FREEZE.sha256` exits 0. No release artifact was
 rebuilt, so the 0.1.3 numbers above still describe the 247-file release tree.
 
