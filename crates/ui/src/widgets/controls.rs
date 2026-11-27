@@ -11,7 +11,7 @@ use ml_core::format_position;
 
 use super::{paint_icon, paint_icon_swap, text, text_width};
 use crate::motion;
-use crate::pure::{fraction_at, progress_fraction, progress_pulse, seek_target, smooth_progress};
+use crate::pure::{fraction_at, progress_fraction, seek_target, smooth_progress};
 use crate::theme::{font_label, Theme, DP12, DP16, DP20, DP32, DP48, DP8, TOUCH};
 
 fn paint_centered_line(
@@ -378,26 +378,25 @@ struct ProgressAnim {
     shown: f32,
 }
 
-pub struct ProgressSliderResponse {
-    pub response: Response,
-    /// Seek target in milliseconds when the user released a click or drag.
+/// Result of one click/drag pass over a seek control.
+pub(crate) struct SeekGesture {
+    /// Smoothed fraction to paint.
+    pub shown: f32,
+    /// Release-time seek target in milliseconds.
     pub seek: Option<u64>,
+    /// Pointer and preview time while hovering or dragging.
+    pub hover: Option<(Pos2, u64)>,
 }
 
-pub fn progress_slider(
+/// Click/drag seek shared by the line slider and the waveform: follows the
+/// pointer while pressed, seeks once on release and smooths forward motion.
+pub(crate) fn seek_gesture(
     ui: &mut Ui,
-    app_theme: &Theme,
+    response: &mut Response,
     position_ms: u64,
     duration_ms: u64,
-    buffering: bool,
-    width: f32,
-) -> ProgressSliderResponse {
-    let (rect, mut response) =
-        ui.allocate_exact_size(Vec2::new(width, TOUCH), Sense::click_and_drag());
-    let track = Rect::from_center_size(
-        rect.center(),
-        Vec2::new((rect.width() - 16.0).max(1.0), 2.0),
-    );
+    track: Rect,
+) -> SeekGesture {
     let pointer = ui.input(|input| input.pointer.interact_pos());
     let dragging = response.is_pointer_button_down_on();
     let mut target = progress_fraction(position_ms, duration_ms);
@@ -433,32 +432,7 @@ pub fn progress_slider(
     if seek.is_none() && (shown - target).abs() > 0.0005 {
         ui.ctx().request_repaint();
     }
-    if buffering {
-        ui.ctx().request_repaint();
-    }
-
-    let painter = ui.painter();
-    painter.rect_filled(track, 0, app_theme.scheme.surface_container_high);
-    if buffering {
-        let pulse = progress_pulse(ui.input(|input| input.time) as f32);
-        painter.rect_filled(
-            track,
-            0,
-            app_theme
-                .scheme
-                .surface_container_highest
-                .lerp_to_gamma(app_theme.scheme.on_surface_variant, 0.25 + 0.35 * pulse),
-        );
-    }
-    let active = Rect::from_min_size(
-        track.left_top(),
-        Vec2::new(track.width() * shown, track.height()),
-    );
-    painter.rect_filled(active, 0, app_theme.scheme.on_surface);
-    let thumb_center = Pos2::new(track.left() + track.width() * shown, rect.center().y);
-    painter.circle_filled(thumb_center, 6.0, app_theme.scheme.on_surface);
-
-    let hover_preview = if (response.hovered() || dragging) && duration_ms > 0 {
+    let hover = if (response.hovered() || dragging) && duration_ms > 0 {
         pointer.map(|pointer| {
             let fraction = fraction_at(pointer.x, track.left(), track.width());
             (pointer, seek_target(fraction, duration_ms))
@@ -466,41 +440,44 @@ pub fn progress_slider(
     } else {
         None
     };
-    if let Some((pointer, preview_ms)) = hover_preview {
-        let label = format_position(preview_ms);
-        let font = font_label(11.0);
-        let bubble = Vec2::new(text_width(painter, &label, font.clone()) + 16.0, 22.0);
-        let left = (pointer.x - bubble.x / 2.0)
-            .clamp(rect.left(), (rect.right() - bubble.x).max(rect.left()));
-        let bubble_rect = Rect::from_min_size(
-            Pos2::new(left, (rect.top() - bubble.y - 6.0).max(0.0)),
-            bubble,
-        );
-        painter.rect_filled(bubble_rect, 0, app_theme.scheme.surface_container_high);
-        painter.rect_stroke(bubble_rect, 0, app_theme.hairline(), StrokeKind::Inside);
-        let galley = painter.layout_no_wrap(label, font, app_theme.scheme.on_surface);
-        painter.galley(
-            bubble_rect.center() - galley.size() / 2.0,
-            galley,
-            app_theme.scheme.on_surface,
-        );
+    SeekGesture {
+        shown,
+        seek,
+        hover,
     }
+}
 
-    response.widget_info(|| {
-        WidgetInfo::labeled(
-            egui::Role::Slider,
-            true,
-            format!(
-                "Seek {} / {}",
-                format_position(position_ms),
-                format_position(duration_ms)
-            ),
-        )
-    });
-    if response.hovered() {
-        ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
-    }
-    ProgressSliderResponse { response, seek }
+/// Time bubble above a seek control at `pointer`.
+pub(crate) fn seek_bubble(
+    painter: &egui::Painter,
+    app_theme: &Theme,
+    rect: Rect,
+    pointer: Pos2,
+    preview_ms: u64,
+) {
+    let label = format_position(preview_ms);
+    let font = font_label(11.0);
+    let bubble = Vec2::new(text_width(painter, &label, font.clone()) + 16.0, 22.0);
+    let left = (pointer.x - bubble.x / 2.0)
+        .clamp(rect.left(), (rect.right() - bubble.x).max(rect.left()));
+    let bubble_rect = Rect::from_min_size(
+        Pos2::new(left, (rect.top() - bubble.y - 6.0).max(0.0)),
+        bubble,
+    );
+    painter.rect_filled(bubble_rect, 0, app_theme.scheme.surface_container_high);
+    painter.rect_stroke(bubble_rect, 0, app_theme.hairline(), StrokeKind::Inside);
+    let galley = painter.layout_no_wrap(label, font, app_theme.scheme.on_surface);
+    painter.galley(
+        bubble_rect.center() - galley.size() / 2.0,
+        galley,
+        app_theme.scheme.on_surface,
+    );
+}
+
+pub struct ProgressSliderResponse {
+    pub response: Response,
+    /// Seek target in milliseconds when the user released a click or drag.
+    pub seek: Option<u64>,
 }
 
 /// Circular filled icon button (play/pause FAB, 56 dp default).
@@ -555,131 +532,6 @@ mod tests {
     };
     use ml_core::Settings;
 
-    fn press_release(pos: Pos2) -> [Vec<Event>; 3] {
-        [
-            vec![Event::PointerMoved(pos)],
-            vec![
-                Event::PointerMoved(pos),
-                Event::PointerButton {
-                    pos,
-                    button: PointerButton::Primary,
-                    pressed: true,
-                    modifiers: Modifiers::default(),
-                },
-            ],
-            vec![
-                Event::PointerMoved(pos),
-                Event::PointerButton {
-                    pos,
-                    button: PointerButton::Primary,
-                    pressed: false,
-                    modifiers: Modifiers::default(),
-                },
-            ],
-        ]
-    }
-
-    #[test]
-    fn progress_slider_seek_matches_the_pointer_pixel() {
-        let ctx = Context::default();
-        let theme = Theme::from_settings(&Settings::default());
-        let mut seeks = Vec::new();
-        // 300 dp slider inside the 400 dp panel: track spans x 16..=300.
-        let pos = Pos2::new(158.0, 24.0);
-        for events in press_release(pos) {
-            let input = RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 100.0))),
-                events,
-                ..RawInput::default()
-            };
-            let mut output = ctx.run_ui(input, |ctx| {
-                CentralPanel::default().show(ctx, |ui| {
-                    let response = progress_slider(ui, &theme, 0, 120_000, false, 300.0);
-                    if let Some(seek) = response.seek {
-                        seeks.push(seek);
-                    }
-                });
-            });
-            output.textures_delta.clear();
-        }
-        assert!(!seeks.is_empty(), "pressing the track seeks");
-        assert!(
-            seeks.iter().all(|seek| *seek == 60_000),
-            "mid-track click seeks to half: {seeks:?}"
-        );
-    }
-
-    #[test]
-    fn progress_slider_seeks_once_when_a_drag_is_released() {
-        let ctx = Context::default();
-        let theme = Theme::from_settings(&Settings::default());
-        let mut seeks = Vec::new();
-        let press = Pos2::new(80.0, 24.0);
-        let end = Pos2::new(300.0, 24.0);
-        let frames = [
-            vec![Event::PointerMoved(press)],
-            vec![
-                Event::PointerMoved(press),
-                Event::PointerButton {
-                    pos: press,
-                    button: PointerButton::Primary,
-                    pressed: true,
-                    modifiers: Modifiers::default(),
-                },
-            ],
-            vec![Event::PointerMoved(end)],
-            vec![
-                Event::PointerMoved(end),
-                Event::PointerButton {
-                    pos: end,
-                    button: PointerButton::Primary,
-                    pressed: false,
-                    modifiers: Modifiers::default(),
-                },
-            ],
-        ];
-        for (index, events) in frames.into_iter().enumerate() {
-            let input = RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 100.0))),
-                events,
-                ..RawInput::default()
-            };
-            let mut output = ctx.run_ui(input, |ctx| {
-                CentralPanel::default().show(ctx, |ui| {
-                    let response = progress_slider(ui, &theme, 0, 120_000, false, 300.0);
-                    if let Some(seek) = response.seek {
-                        seeks.push(seek);
-                    }
-                });
-            });
-            output.textures_delta.clear();
-            if index < 3 {
-                assert!(seeks.is_empty(), "no seek before release: {seeks:?}");
-            }
-        }
-        assert_eq!(seeks, vec![120_000], "one seek to the drag end on release");
-    }
-
-    #[test]
-    fn progress_slider_handles_missing_duration_without_fake_position() {
-        let ctx = Context::default();
-        let theme = Theme::from_settings(&Settings::default());
-        let pos = Pos2::new(200.0, 24.0);
-        for events in press_release(pos) {
-            let input = RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 100.0))),
-                events,
-                ..RawInput::default()
-            };
-            let mut output = ctx.run_ui(input, |ctx| {
-                CentralPanel::default().show(ctx, |ui| {
-                    let response = progress_slider(ui, &theme, 0, 0, true, 300.0);
-                    assert!(response.seek.is_none());
-                });
-            });
-            output.textures_delta.clear();
-        }
-    }
 
     #[test]
     fn icon_button_state_layer_animates_hover_and_press() {

@@ -74,6 +74,32 @@ pub fn dither_rect(painter: &Painter, rect: Rect, strength: f32) {
     painter.add(eframe::egui::Shape::mesh(mesh));
 }
 
+/// Horizontal span of the dot core inside one cell. A 1.5 dp waveform bar
+/// cannot carry a whole 4 pt cell, so it samples this column and repeats only
+/// along y: every bar shows the same dot rhythm instead of a random slice.
+const DOT_U0: f32 = 0.375;
+const DOT_U1: f32 = 0.625;
+
+/// One dot-dithered vertical bar: the dither texture pinned to the dot column.
+pub fn dither_bar(painter: &Painter, rect: Rect, strength: f32) {
+    if strength <= 0.0 || !rect.is_positive() {
+        return;
+    }
+    let texels = (TILE_PT * painter.ctx().pixels_per_point())
+        .round()
+        .clamp(4.0, 64.0) as usize;
+    let dark = painter.ctx().theme() == eframe::egui::Theme::Dark;
+    let texture = texture(painter.ctx(), texels, dark);
+    let alpha = (strength.clamp(0.0, MAX_STRENGTH) * 255.0).round() as u8;
+    let uv = Rect::from_min_max(
+        Pos2::new(DOT_U0, 0.0),
+        Pos2::new(DOT_U1, rect.height() / TILE_PT),
+    );
+    let mut mesh = Mesh::with_texture(texture.id());
+    mesh.add_rect_with_uv(rect, uv, dot(dark, alpha));
+    painter.add(eframe::egui::Shape::mesh(mesh));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

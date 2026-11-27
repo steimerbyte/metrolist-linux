@@ -7,11 +7,13 @@ mod controls;
 mod dither;
 mod feedback;
 mod rows;
+mod waveform;
 
 pub use controls::*;
 pub use dither::*;
 pub use feedback::*;
 pub use rows::*;
+pub use waveform::*;
 
 use eframe::egui::{self, Color32, FontId, Pos2, Stroke, StrokeKind, TextureHandle, Ui, Vec2};
 use egui::{text::LayoutJob, text::TextFormat, text::TextWrapping};

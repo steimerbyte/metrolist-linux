@@ -9,7 +9,7 @@ use crate::theme::{
 };
 use crate::widgets::{
     art_or_placeholder, icon_button, icon_button_at, outlined_button, paint_icon, paint_icon_swap,
-    progress_slider, slider,
+    slider, waveform_slider,
 };
 use ml_core::{format_position, PlaybackStatus, RepeatMode, Song};
 
@@ -213,16 +213,12 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         // otherwise overlaps the artist byline on the compact layout.
         ui.add_space(DP24);
         let slider_width = (width - 48.0).min(460.0);
-        let buffering = matches!(
-            view.status,
-            PlaybackStatus::Loading | PlaybackStatus::Buffering
-        );
-        let seek = progress_slider(
+        let seek = waveform_slider(
             ui,
             app_theme,
+            &song.id,
             view.position_ms,
             view.duration_ms,
-            buffering,
             slider_width,
         );
         seek.response.on_hover_text("Seek (←/→ 5 s)");
