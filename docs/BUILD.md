@@ -69,7 +69,7 @@ Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (247 files, self-sha
 `87f5b3a7…`, `sha256sum -c --quiet` exits 0) in `rust:1.99.1-bookworm` with
 `CARGO_BUILD_JOBS=1` (release compile 23m59s); the shipped container binary is
 `build/target-container/release/metrolist`, sha256
-`801d64dcf82afb2ef03765ca3ea6723faa037abecf988381c96c968556aecaff`
+`1e8d6c0042d9830f891d7161c291663f93d20d093dd9197de41363783b1684b9`
 (61,117,448 bytes). The host binary is only a local reference and has a newer
 GLIBC floor. `dist/SNAPSHOT.txt` records the checks, mpv bundle and runtime
 dependencies.
