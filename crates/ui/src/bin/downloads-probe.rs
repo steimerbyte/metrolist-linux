@@ -1,16 +1,18 @@
 //! Live probe: `downloads-probe <videoId> [--dir PATH] [--quality low|high|auto]`.
 //!
-//! Runs one real download through `DownloadManager` + `InnertubeClient`
-//! (VISIONOS ranged 206 requests), prints every event, and exits non-zero unless
-//! the file exists with a non-zero size.
+//! Runs one real download through `DownloadManager` + the composition root's
+//! InnerTube source (VISIONOS ranged 206 requests), prints every event, and
+//! exits non-zero unless the file exists with a non-zero size.
 
 use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ml_core::{AudioQuality, Song};
 use ml_downloads::{DownloadConfig, DownloadEvent, DownloadManager};
+use ml_ui::audio_source::InnerTubeAudioSource;
 
 fn usage() -> ! {
     eprintln!("usage: downloads-probe <videoId> [--dir PATH] [--quality low|high|auto]");
@@ -96,12 +98,16 @@ fn main() -> ExitCode {
         song.id
     );
 
-    let manager = match DownloadManager::new(DownloadConfig {
-        dir: dir.clone(),
-        max_concurrent: 1,
-        quality,
-        max_storage_bytes: None,
-    }) {
+    let source = Arc::new(InnerTubeAudioSource::default());
+    let manager = match DownloadManager::with_source(
+        DownloadConfig {
+            dir: dir.clone(),
+            max_concurrent: 1,
+            quality,
+            max_storage_bytes: None,
+        },
+        source,
+    ) {
         Ok(manager) => manager,
         Err(error) => {
             eprintln!("cannot start download manager: {error}");

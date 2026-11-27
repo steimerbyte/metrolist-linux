@@ -1,6 +1,6 @@
 //! Listening statistics and the Wrapped story.
 
-use eframe::egui::{self, Align2, Pos2, Ui, Vec2};
+use eframe::egui::{self, Align2, Pos2, StrokeKind, Ui, Vec2};
 use ml_core::{Album, AlbumRef, Artist, ArtistItem, Song};
 use ml_store::{
     AlbumStat, ArtistStat, MonthPlays, SongStat, StatsPeriod, StatsReport, StatsSummary,
@@ -14,9 +14,8 @@ use crate::pure::{
 use crate::routes::Route;
 use crate::services::Services;
 use crate::state::{Load, StatsState};
-use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8, TITLE_LARGE,
-};
+use crate::theme::fonts::{font_bold, font_display, font_label, font_medium, font_regular};
+use crate::theme::{Theme, DP12, DP16, DP24, DP4, DP8, SHAPE_LARGE, TITLE_LARGE};
 use crate::widgets::{art_or_placeholder, empty_state, filled_button, section_header, text};
 
 use super::{error_block, skeleton_cards, skeleton_rows, Intent};
@@ -52,22 +51,24 @@ fn summary_cards(ui: &mut Ui, theme: &Theme, summary: &StatsSummary, width: f32)
             ui.spacing_mut().item_spacing.x = gap;
             for (label, value) in chunk {
                 let (rect, _) =
-                    ui.allocate_exact_size(Vec2::new(card_width, 76.0), egui::Sense::hover());
+                    ui.allocate_exact_size(Vec2::new(card_width, 104.0), egui::Sense::hover());
                 ui.painter()
-                    .rect_filled(rect, 12, theme.scheme.surface_container);
+                    .rect_filled(rect, SHAPE_LARGE, theme.scheme.surface_container);
+                ui.painter()
+                    .rect_stroke(rect, SHAPE_LARGE, theme.hairline(), StrokeKind::Inside);
                 crate::widgets::elided(
                     ui.painter(),
                     rect.left_top() + Vec2::new(DP12, DP12),
-                    label,
-                    regular_font(11.0),
+                    &label.to_ascii_uppercase(),
+                    font_label(11.0),
                     theme.scheme.on_surface_variant,
                     card_width - DP8,
                 );
                 crate::widgets::elided(
                     ui.painter(),
-                    rect.left_top() + Vec2::new(DP12, 35.0),
+                    rect.left_top() + Vec2::new(DP12, 40.0),
                     value,
-                    medium_font(20.0),
+                    font_display(40.0),
                     theme.scheme.on_surface,
                     card_width - DP8,
                 );
@@ -103,14 +104,14 @@ fn monthly_summary(months: &[&MonthPlays]) -> String {
 fn monthly_chart(ui: &mut Ui, theme: &Theme, monthly: &[MonthPlays], width: f32) {
     let months = last_months(monthly);
     ui.label(
-        egui::RichText::new("Plays by month")
-            .font(medium_font(14.0))
+        egui::RichText::new("PLAYS BY MONTH")
+            .font(font_label(11.0))
             .color(theme.scheme.on_surface),
     );
     if months.is_empty() {
         ui.label(
             egui::RichText::new("No monthly plays yet")
-                .font(regular_font(12.0))
+                .font(font_regular(12.0))
                 .color(theme.scheme.on_surface_variant),
         );
         return;
@@ -128,12 +129,11 @@ fn monthly_chart(ui: &mut Ui, theme: &Theme, monthly: &[MonthPlays], width: f32)
         Pos2::new(rect.left() + DP8, rect.top() + 16.0),
         Pos2::new(rect.right() - DP8, rect.bottom() - 25.0),
     );
+    let axis = theme.hairline();
     ui.painter()
-        .rect_filled(plot, 4, theme.scheme.surface_container_low);
-    ui.painter().line_segment(
-        [plot.left_bottom(), plot.right_bottom()],
-        egui::Stroke::new(1.0, theme.scheme.outline_variant),
-    );
+        .line_segment([plot.left_top(), plot.left_bottom()], axis);
+    ui.painter()
+        .line_segment([plot.left_bottom(), plot.right_bottom()], axis);
     let max = months.iter().map(|month| month.plays).max().unwrap_or(0);
     let gap = 4.0;
     let bar_width = ((plot.width() - gap * (months.len().saturating_sub(1)) as f32)
@@ -150,12 +150,12 @@ fn monthly_chart(ui: &mut Ui, theme: &Theme, monthly: &[MonthPlays], width: f32)
             Pos2::new(x, plot.bottom() - height),
             Pos2::new(x + bar_width, plot.bottom()),
         );
-        ui.painter().rect_filled(bar, 2, theme.scheme.primary);
+        ui.painter().rect_filled(bar, 0, theme.scheme.on_surface);
         ui.painter().text(
             Pos2::new(x + bar_width / 2.0, plot.bottom() + 4.0),
             Align2::CENTER_TOP,
-            month_short(month.month),
-            regular_font(11.0),
+            month_short(month.month).to_ascii_uppercase(),
+            font_label(11.0),
             theme.scheme.on_surface_variant,
         );
         if month.plays > 0 {
@@ -163,7 +163,7 @@ fn monthly_chart(ui: &mut Ui, theme: &Theme, monthly: &[MonthPlays], width: f32)
                 Pos2::new(x + bar_width / 2.0, bar.top() - 2.0),
                 Align2::CENTER_BOTTOM,
                 month.plays.to_string(),
-                regular_font(11.0),
+                font_label(11.0),
                 theme.scheme.on_surface_variant,
             );
         }
@@ -187,24 +187,23 @@ fn stat_song_row(
     let (hover_t, press_t) = motion::interaction(ui, &response);
     if active_t >= 1.0 {
         ui.painter()
-            .rect_filled(rect, 8, theme.scheme.secondary_container);
+            .rect_filled(rect, 0, theme.scheme.surface_container_high);
     } else if active_t > 0.0 || hover_t > 0.0 || press_t > 0.0 {
-        let base = theme
-            .scheme
-            .surface_container_high
-            .lerp_to_gamma(theme.scheme.secondary_container, active_t);
-        ui.painter()
-            .rect_filled(rect, 8, motion::state_layer_at(base, hover_t, press_t));
+        ui.painter().rect_filled(
+            rect,
+            0,
+            motion::state_layer_at(theme.scheme.surface_container_high, hover_t, press_t),
+        );
     }
     let art_rect =
         egui::Rect::from_min_size(rect.left_top() + Vec2::new(30.0, 10.0), Vec2::splat(44.0));
     let texture = art.texture(ui.ctx(), services, &stat.song.thumb(160));
-    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 4);
+    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 0);
     text(
         ui.painter(),
         Pos2::new(rect.left() + DP8, rect.top() + 20.0),
         &rank.to_string(),
-        medium_font(13.0),
+        font_label(11.0),
         theme.scheme.on_surface_variant,
     );
     let text_x = art_rect.right() + DP8;
@@ -213,7 +212,7 @@ fn stat_song_row(
         ui.painter(),
         Pos2::new(text_x, rect.top() + 10.0),
         &stat.song.title,
-        medium_font(14.0),
+        font_medium(14.0),
         theme.scheme.on_surface,
         (right - 82.0 - text_x).max(20.0),
     );
@@ -221,22 +220,22 @@ fn stat_song_row(
         ui.painter(),
         Pos2::new(text_x, rect.top() + 31.0),
         &stat.song.artist_names(),
-        regular_font(12.0),
+        font_regular(12.0),
         theme.scheme.on_surface_variant,
         (right - 82.0 - text_x).max(20.0),
     );
     ui.painter().text(
         Pos2::new(right, rect.top() + 12.0),
         Align2::RIGHT_TOP,
-        format!("{} plays", stat.plays),
-        medium_font(12.0),
+        format!("{} PLAYS", stat.plays),
+        font_label(11.0),
         theme.scheme.on_surface,
     );
     ui.painter().text(
         Pos2::new(right, rect.top() + 33.0),
         Align2::RIGHT_TOP,
         listening_time_text(stat.ms),
-        regular_font(11.0),
+        font_label(11.0),
         theme.scheme.on_surface_variant,
     );
     response.widget_info(|| {
@@ -271,7 +270,7 @@ fn stat_media_row(
     if hover_t > 0.0 || press_t > 0.0 {
         ui.painter().rect_filled(
             rect,
-            8,
+            0,
             motion::state_layer_at(theme.scheme.surface_container_high, hover_t, press_t),
         );
     }
@@ -281,12 +280,12 @@ fn stat_media_row(
         .map(|url| ml_core::resize_thumbnail_url(url, 160))
         .unwrap_or_default();
     let texture = art.texture(ui.ctx(), services, &url);
-    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 4);
+    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 0);
     text(
         ui.painter(),
         Pos2::new(rect.left() + DP8, rect.top() + 19.0),
         &rank.to_string(),
-        medium_font(13.0),
+        font_label(11.0),
         theme.scheme.on_surface_variant,
     );
     let text_x = art_rect.right() + DP8;
@@ -295,7 +294,7 @@ fn stat_media_row(
         ui.painter(),
         Pos2::new(text_x, rect.top() + 9.0),
         title,
-        medium_font(14.0),
+        font_medium(14.0),
         theme.scheme.on_surface,
         (right - 82.0 - text_x).max(20.0),
     );
@@ -303,22 +302,22 @@ fn stat_media_row(
         ui.painter(),
         Pos2::new(text_x, rect.top() + 30.0),
         subtitle,
-        regular_font(12.0),
+        font_regular(12.0),
         theme.scheme.on_surface_variant,
         (right - 82.0 - text_x).max(20.0),
     );
     ui.painter().text(
         Pos2::new(right, rect.top() + 11.0),
         Align2::RIGHT_TOP,
-        format!("{plays} plays"),
-        medium_font(12.0),
+        format!("{plays} PLAYS"),
+        font_label(11.0),
         theme.scheme.on_surface,
     );
     ui.painter().text(
         Pos2::new(right, rect.top() + 32.0),
         Align2::RIGHT_TOP,
         listening_time_text(ms),
-        regular_font(11.0),
+        font_label(11.0),
         theme.scheme.on_surface_variant,
     );
     response.widget_info(|| {
@@ -346,7 +345,7 @@ fn top_songs(
     section_header(
         ui,
         theme,
-        &format!("Top songs · {}", report.top_songs.len()),
+        &format!("TOP SONGS · {}", report.top_songs.len()),
         width,
         false,
     );
@@ -381,7 +380,7 @@ fn top_artists(
     section_header(
         ui,
         theme,
-        &format!("Top artists · {}", report.top_artists.len()),
+        &format!("TOP ARTISTS · {}", report.top_artists.len()),
         width,
         false,
     );
@@ -427,7 +426,7 @@ fn top_albums(
     section_header(
         ui,
         theme,
-        &format!("Top albums · {}", report.top_albums.len()),
+        &format!("TOP ALBUMS · {}", report.top_albums.len()),
         width,
         false,
     );
@@ -543,21 +542,23 @@ fn feature(
 ) -> egui::Rect {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 128.0), egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 16, theme.scheme.surface_container_high);
+        .rect_filled(rect, SHAPE_LARGE, theme.scheme.surface_container_high);
+    ui.painter()
+        .rect_stroke(rect, SHAPE_LARGE, theme.hairline(), StrokeKind::Inside);
     let art_rect =
         egui::Rect::from_min_size(rect.left_top() + Vec2::new(DP16, DP16), Vec2::splat(96.0));
     let url = art_url
         .map(|url| ml_core::resize_thumbnail_url(url, 320))
         .unwrap_or_default();
     let texture = art.texture(ui.ctx(), services, &url);
-    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 8);
+    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 0);
     let text_x = art_rect.right() + DP16;
     let max_width = (rect.right() - DP16 - text_x).max(40.0);
     crate::widgets::elided(
         ui.painter(),
         Pos2::new(text_x, rect.top() + 24.0),
         title,
-        bold_font(22.0),
+        font_bold(22.0),
         theme.scheme.on_surface,
         max_width,
     );
@@ -565,37 +566,39 @@ fn feature(
         ui.painter(),
         Pos2::new(text_x, rect.top() + 55.0),
         subtitle,
-        regular_font(13.0),
+        font_regular(13.0),
         theme.scheme.on_surface_variant,
         max_width,
     );
     ui.painter().text(
         Pos2::new(text_x, rect.top() + 78.0),
         Align2::LEFT_TOP,
-        format!("{plays} plays · {}", listening_time_text(ms)),
-        medium_font(12.0),
-        theme.scheme.primary,
+        format!("{plays} PLAYS · {}", listening_time_text(ms)).to_ascii_uppercase(),
+        font_label(11.0),
+        theme.scheme.on_surface_variant,
     );
     rect
 }
 
 fn story_card(ui: &mut Ui, theme: &Theme, label: &str, value: &str, width: f32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 88.0), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 104.0), egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 16, theme.scheme.primary_container);
+        .rect_filled(rect, SHAPE_LARGE, theme.scheme.surface_container);
+    ui.painter()
+        .rect_stroke(rect, SHAPE_LARGE, theme.hairline(), StrokeKind::Inside);
     ui.painter().text(
         rect.left_top() + Vec2::new(DP16, DP16),
         Align2::LEFT_TOP,
-        label,
-        regular_font(12.0),
-        theme.scheme.on_primary_container,
+        label.to_ascii_uppercase(),
+        font_label(11.0),
+        theme.scheme.on_surface_variant,
     );
     ui.painter().text(
-        rect.left_top() + Vec2::new(DP16, 38.0),
+        rect.left_top() + Vec2::new(DP16, 40.0),
         Align2::LEFT_TOP,
         value,
-        bold_font(28.0),
-        theme.scheme.on_primary_container,
+        font_display(40.0),
+        theme.scheme.on_surface,
     );
 }
 
@@ -619,12 +622,12 @@ pub fn wrapped(
             "Your {} wrapped",
             stats_period_label(state.period).to_lowercase()
         ))
-        .font(bold_font(TITLE_LARGE))
+        .font(font_bold(TITLE_LARGE))
         .color(theme.scheme.on_surface),
     );
     ui.label(
         egui::RichText::new("A small story made from your listening history.")
-            .font(regular_font(13.0))
+            .font(font_regular(13.0))
             .color(theme.scheme.on_surface_variant),
     );
     ui.add_space(DP12);
@@ -660,8 +663,8 @@ pub fn wrapped(
     if let Some(top) = report.top_songs.first() {
         ui.add_space(DP12);
         ui.label(
-            egui::RichText::new("Top song")
-                .font(medium_font(14.0))
+            egui::RichText::new("TOP SONG")
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface),
         );
         feature(
@@ -680,8 +683,8 @@ pub fn wrapped(
     if let Some(top) = report.top_artists.first() {
         ui.add_space(DP12);
         ui.label(
-            egui::RichText::new("Top artist")
-                .font(medium_font(14.0))
+            egui::RichText::new("TOP ARTIST")
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface),
         );
         feature(
@@ -700,8 +703,8 @@ pub fn wrapped(
     if let Some(top) = report.top_albums.first() {
         ui.add_space(DP12);
         ui.label(
-            egui::RichText::new("Top album")
-                .font(medium_font(14.0))
+            egui::RichText::new("TOP ALBUM")
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface),
         );
         feature(
@@ -728,9 +731,9 @@ pub fn wrapped(
         }
         if state.copied {
             ui.label(
-                egui::RichText::new("Copied to clipboard")
-                    .font(regular_font(12.0))
-                    .color(theme.scheme.primary),
+                egui::RichText::new("COPIED TO CLIPBOARD")
+                    .font(font_label(11.0))
+                    .color(theme.scheme.on_surface),
             );
         }
     });

@@ -7,9 +7,11 @@ use crate::art::ArtCache;
 use crate::pure::{bytes_text, download_progress_text, storage_percent};
 use crate::services::Services;
 use crate::state::DownloadsState;
-use crate::theme::{medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8};
+use crate::theme::fonts::{font_bold, font_label, font_medium, font_regular};
+use crate::theme::{Theme, DP12, DP16, DP24, DP4, DP8};
 use crate::widgets::{
-    art_or_placeholder, elided, empty_state, filled_button, icon_button_at, outlined_button, text,
+    art_or_placeholder, divider, elided, empty_state, filled_button, icon_button_at,
+    outlined_button, text,
 };
 
 use super::Intent;
@@ -27,8 +29,8 @@ pub fn show(
     text(
         ui.painter(),
         ui.cursor().min,
-        "Offline downloads",
-        medium_font(18.0),
+        "OFFLINE DOWNLOADS",
+        font_label(12.0),
         theme.scheme.on_surface,
     );
     ui.add_space(DP24);
@@ -42,41 +44,42 @@ pub fn show(
     // Storage meter.
     let used = state.used;
     let limit = state.limit;
+    let percent = limit.and_then(|limit| storage_percent(used, Some(limit)));
     let used_text = match limit {
-        Some(limit) => format!("{} of {} used", bytes_text(used), bytes_text(limit)),
-        None => format!("{} used · no limit", bytes_text(used)),
+        Some(limit) => format!("{} OF {} USED", bytes_text(used), bytes_text(limit)),
+        None => format!("{} USED · NO LIMIT", bytes_text(used)),
     };
-    ui.label(
-        egui::RichText::new(used_text)
-            .font(regular_font(13.0))
-            .color(theme.scheme.on_surface_variant),
-    );
-    if limit.is_some() {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 6.0), Sense::hover());
+    ui.label(egui::RichText::new(used_text).font(font_label(11.0)).color(
+        if percent.is_some_and(|percent| percent >= 90) {
+            theme.scheme.warning
+        } else {
+            theme.scheme.on_surface_variant
+        },
+    ));
+    if let Some(percent) = percent {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 2.0), Sense::hover());
         ui.painter()
-            .rect_filled(rect, 3, theme.scheme.surface_container_high);
-        if let Some(percent) = storage_percent(used, limit) {
-            if percent > 0 {
-                let filled = Rect::from_min_size(
-                    rect.min,
-                    Vec2::new(rect.width() * percent as f32 / 100.0, rect.height()),
-                );
-                ui.painter().rect_filled(filled, 3, theme.scheme.primary);
-            }
+            .rect_filled(rect, 0, theme.scheme.surface_container_high);
+        if percent > 0 {
+            let filled = Rect::from_min_size(
+                rect.min,
+                Vec2::new(rect.width() * percent as f32 / 100.0, rect.height()),
+            );
+            ui.painter().rect_filled(filled, 0, theme.scheme.on_surface);
         }
         ui.add_space(DP4);
     }
     ui.label(
-        egui::RichText::new(format!("Folder: {}", services.download_dir().display()))
-            .font(regular_font(12.0))
+        egui::RichText::new(format!("FOLDER {}", services.download_dir().display()))
+            .font(font_label(11.0))
             .color(theme.scheme.on_surface_variant),
     );
     if let Some(quality) = services.download_quality() {
         ui.label(
             egui::RichText::new(format!(
-                "New downloads use {quality:?} quality (launch setting)."
+                "NEW DOWNLOADS USE {quality:?} QUALITY (LAUNCH SETTING)"
             ))
-            .font(regular_font(12.0))
+            .font(font_label(11.0))
             .color(theme.scheme.on_surface_variant),
         );
     }
@@ -102,9 +105,11 @@ pub fn show(
     }
 
     let items = state.items.clone();
-    for entry in &items {
+    for (index, entry) in items.iter().enumerate() {
         intents.extend(download_row(ui, theme, services, art, entry, width, state));
-        ui.add_space(DP4);
+        if index + 1 < items.len() {
+            divider(ui, theme);
+        }
     }
     ui.add_space(DP12);
 
@@ -113,7 +118,7 @@ pub fn show(
             ui.set_width(320.0);
             ui.label(
                 egui::RichText::new("Remove download?")
-                    .font(medium_font(18.0))
+                    .font(font_bold(18.0))
                     .color(theme.scheme.on_surface),
             );
             ui.add_space(DP8);
@@ -122,7 +127,7 @@ pub fn show(
                     "“{}” will be deleted from disk. It can be downloaded again later.",
                     entry.song.title
                 ))
-                .font(regular_font(14.0))
+                .font(font_regular(14.0))
                 .color(theme.scheme.on_surface_variant),
             );
             ui.add_space(DP16);
@@ -175,12 +180,12 @@ fn download_row(
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 84.0), Sense::hover());
     if response.hovered() {
         ui.painter()
-            .rect_filled(rect, 8, theme.scheme.surface_container_high);
+            .rect_filled(rect, 0, theme.scheme.surface_container_high);
     }
     let art_rect = Rect::from_min_size(rect.left_top() + Vec2::new(0.0, 8.0), Vec2::splat(64.0));
     let url = entry.song.thumb(160);
     let texture = art.texture(ui.ctx(), services, &url);
-    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 6);
+    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 0);
 
     let text_x = art_rect.right() + 12.0;
     let text_top = rect.top() + 14.0;
@@ -188,7 +193,7 @@ fn download_row(
         ui.painter(),
         Pos2::new(text_x, text_top),
         &entry.song.title,
-        medium_font(15.0),
+        font_medium(15.0),
         theme.scheme.on_surface,
         text_width,
     );
@@ -196,35 +201,35 @@ fn download_row(
         ui.painter(),
         Pos2::new(text_x, text_top + 21.0),
         &entry.song.artist_names(),
-        regular_font(12.0),
+        font_regular(12.0),
         theme.scheme.on_surface_variant,
         text_width,
     );
     let (status, color) = match entry.state {
-        DownloadState::Queued => ("Queued · 0%".to_string(), theme.scheme.on_surface_variant),
+        DownloadState::Queued => ("QUEUED · 0%".to_string(), theme.scheme.on_surface_variant),
         DownloadState::Downloading => (
             format!(
-                "Downloading · {}",
+                "DOWNLOADING · {}",
                 download_progress_text(
                     entry.bytes_downloaded,
                     entry.total_bytes.unwrap_or(entry.size_bytes)
                 )
             ),
-            theme.scheme.primary,
+            theme.scheme.on_surface,
         ),
         DownloadState::Completed => (
-            format!("Downloaded · 100% · {}", bytes_text(entry.size_bytes)),
-            theme.scheme.primary,
+            format!("DOWNLOADED · 100% · {}", bytes_text(entry.size_bytes)),
+            theme.scheme.success,
         ),
         DownloadState::Failed => (
             format!(
-                "Failed · {}",
+                "FAILED · {}",
                 entry.error.as_deref().unwrap_or("unknown error")
             ),
             theme.scheme.error,
         ),
         DownloadState::Cancelled => (
-            "Cancelled · 0%".to_string(),
+            "CANCELLED · 0%".to_string(),
             theme.scheme.on_surface_variant,
         ),
     };
@@ -232,25 +237,25 @@ fn download_row(
         ui.painter(),
         Pos2::new(text_x, text_top + 40.0),
         &status,
-        regular_font(12.0),
+        font_label(11.0),
         color,
         text_width,
     );
     if entry.state == DownloadState::Downloading {
         let bar = Rect::from_min_size(
             Pos2::new(text_x, text_top + 55.0),
-            Vec2::new(text_width, 3.0),
+            Vec2::new(text_width, 2.0),
         );
         ui.painter()
-            .rect_filled(bar, 2, theme.scheme.surface_container_high);
+            .rect_filled(bar, 0, theme.scheme.surface_container_high);
         let percent = entry.percent().min(100) as f32;
         ui.painter().rect_filled(
             Rect::from_min_size(
                 bar.min,
                 Vec2::new(bar.width() * percent / 100.0, bar.height()),
             ),
-            2,
-            theme.scheme.primary,
+            0,
+            theme.scheme.on_surface,
         );
     }
 

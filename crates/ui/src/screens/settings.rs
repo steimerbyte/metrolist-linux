@@ -4,21 +4,20 @@
 use std::path::Path;
 use std::time::Duration;
 
-use eframe::egui::{self, Align, Color32, Layout, Sense, Ui, Vec2};
+use eframe::egui::{self, Align, Layout, Ui, Vec2};
 use ml_audio::{AudioDevice, SleepTimer};
-use ml_core::{AudioQuality, LyricsSettings, Settings, ThemeMode};
+use ml_core::{AudioQuality, HomePage, LyricsSettings, Settings, ThemeMode};
 
 use crate::desktop::DesktopStatus;
 use crate::integrations::{DiscordStatus, LastFmStatus, LastFmUiState};
 use crate::pure::{
     bytes_text, crossfade_label, crossfade_seconds, gain_label, normalization_gain, playback_speed,
-    sanitize_proxy_url, seed_color_value, speed_percent,
+    sanitize_proxy_url, speed_percent,
 };
 use crate::state::{EqPreset, PlayerExtras};
-use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, BODY_SMALL, DP16, DP24, DP4, DP8, TITLE_MEDIUM,
-};
-use crate::widgets::{chip, outlined_button, slider};
+use crate::theme::fonts::{font_label, font_medium, font_regular};
+use crate::theme::{Theme, BODY_SMALL, DP24, DP4, DP8, TITLE_MEDIUM};
+use crate::widgets::{chip, divider, outlined_button, slider};
 
 use super::measured_column;
 
@@ -62,6 +61,8 @@ fn device_status(selected: Option<&str>, devices: &[AudioDevice]) -> (String, bo
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingsAction {
     Changed,
+    /// Home page or shelf selection changed; reload the feed.
+    HomeViewChanged,
     ClearImageCache,
     SleepTimer(SleepTimer),
     EqChanged,
@@ -89,11 +90,15 @@ pub enum SettingsAction {
 /// UI-only state that lives outside `ml_core::Settings`.
 pub struct SettingsStatus<'a> {
     pub extras: &'a mut PlayerExtras,
+    /// `(title, browse id)` of the shelves in the current feed.
+    pub home_sections: &'a [(String, String)],
     pub crossfade_available: bool,
     pub focus_playback: bool,
     pub focus_sleep: bool,
     /// Demo/screenshot helper: bring the output-device list into view.
     pub focus_audio: bool,
+    /// Demo/screenshot helper: bring the home-feed group into view.
+    pub focus_home: bool,
     pub image_cache: usize,
     pub image_cache_bytes: usize,
     pub db_path: &'a Path,
@@ -127,10 +132,12 @@ pub fn show(
 ) -> Vec<SettingsAction> {
     let SettingsStatus {
         extras,
+        home_sections,
         crossfade_available,
         focus_playback,
         focus_sleep,
         focus_audio,
+        focus_home,
         image_cache,
         image_cache_bytes,
         db_path,
@@ -163,7 +170,7 @@ pub fn show(
             } else {
                 "Signed out"
             })
-            .font(medium_font(TITLE_MEDIUM))
+            .font(font_medium(TITLE_MEDIUM))
             .color(theme.scheme.on_surface),
         );
         if outlined_button(ui, theme, "Manage account").clicked() {
@@ -179,6 +186,7 @@ pub fn show(
         },
     ));
 
+    // seed_color is retained for settings compatibility; Nothing is monochrome.
     section(ui, theme, "Appearance");
     ui.label(caption(theme, "Theme"));
     ui.horizontal_wrapped(|ui| {
@@ -187,7 +195,6 @@ pub fn show(
             (ThemeMode::System, "System"),
             (ThemeMode::Light, "Light"),
             (ThemeMode::Dark, "Dark"),
-            (ThemeMode::PureBlack, "Pure black"),
         ] {
             if chip(ui, theme, label, settings.theme_mode == mode).clicked() {
                 settings.theme_mode = mode;
@@ -196,65 +203,6 @@ pub fn show(
         }
     });
     ui.add_space(DP8);
-    ui.label(caption(theme, "Seed colour"));
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = DP8;
-        for (seed, name) in [
-            (0x00ED_5564u32, "Coral"),
-            (0x0042_85F4, "Blue"),
-            (0x0034_A853, "Green"),
-            (0x00F9_AB00, "Amber"),
-            (0x009C_27B0, "Purple"),
-            (0x0000_BCD4, "Cyan"),
-        ] {
-            let (rect, response) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::click());
-            let color = seed_color(seed);
-            ui.painter().circle_filled(rect.center(), 15.0, color);
-            if settings.seed_color == seed {
-                ui.painter().circle_stroke(
-                    rect.center(),
-                    17.0,
-                    egui::Stroke::new(2.0, theme.scheme.primary),
-                );
-            }
-            if response.clicked() && settings.seed_color != seed {
-                settings.seed_color = seed;
-                changed = true;
-            }
-            response.on_hover_text(name);
-        }
-        let (r, g, b) = settings.seed_rgb();
-        let mut rgb = [r, g, b];
-        if ui.color_edit_button_srgb(&mut rgb).changed() {
-            let seed = ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | rgb[2] as u32;
-            let seed = seed_color_value(seed);
-            if seed != settings.seed_color {
-                settings.seed_color = seed;
-                changed = true;
-            }
-        }
-    });
-    ui.add_space(DP4);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = DP8;
-        if chip(ui, theme, "Dynamic colour", settings.dynamic_accent).clicked() {
-            settings.dynamic_accent = !settings.dynamic_accent;
-            changed = true;
-        }
-        ui.label(caption(
-            theme,
-            if settings.dynamic_accent {
-                "Follows the desktop accent when available."
-            } else {
-                "Uses the seed colour."
-            },
-        ));
-    });
-    ui.label(caption(
-        theme,
-        "Dynamic desktop accent detection is not available yet; seed colour is used.",
-    ));
-    ui.add_space(DP4);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = DP8;
         if chip(ui, theme, "Reduce motion", settings.reduce_motion).clicked() {
@@ -298,7 +246,7 @@ pub fn show(
         ui.label(caption(theme, "Crossfade"));
         ui.label(
             egui::RichText::new(crossfade_label(extras.crossfade_seconds))
-                .font(medium_font(13.0))
+                .font(font_medium(13.0))
                 .color(theme.scheme.on_surface),
         );
     });
@@ -335,7 +283,7 @@ pub fn show(
     } else {
         ui.label(
             egui::RichText::new("Second audio engine unavailable; crossfade stays off.")
-                .font(regular_font(12.0))
+                .font(font_regular(12.0))
                 .color(theme.scheme.error),
         );
     }
@@ -376,7 +324,7 @@ pub fn show(
         ui.label(caption(theme, "Manual gain"));
         ui.label(
             egui::RichText::new(gain_label(extras.normalization_gain_db))
-                .font(medium_font(13.0))
+                .font(font_medium(13.0))
                 .color(theme.scheme.on_surface),
         );
     });
@@ -404,7 +352,7 @@ pub fn show(
         ui.label(caption(theme, "Playback speed"));
         ui.label(
             egui::RichText::new(format!("{}%", speed_percent(extras.speed)))
-                .font(medium_font(13.0))
+                .font(font_medium(13.0))
                 .color(theme.scheme.on_surface),
         );
     });
@@ -487,7 +435,7 @@ pub fn show(
             ui.spacing_mut().item_spacing.x = DP8;
             ui.label(
                 egui::RichText::new(format!("Device list unavailable: {error}"))
-                    .font(regular_font(12.0))
+                    .font(font_regular(12.0))
                     .color(theme.scheme.error),
             );
             if outlined_button(ui, theme, "Retry").clicked() {
@@ -519,8 +467,9 @@ pub fn show(
                         let auto = ui.add(
                             egui::Button::new(
                                 egui::RichText::new("Automatic (system default)")
-                                    .font(regular_font(13.0)),
+                                    .font(font_regular(13.0)),
                             )
+                            .corner_radius(0)
                             .selected(automatic)
                             .wrap()
                             .min_size(Vec2::new(ui.available_width(), 0.0)),
@@ -533,8 +482,9 @@ pub fn show(
                             let row = ui.add(
                                 egui::Button::new(
                                     egui::RichText::new(device_label(device))
-                                        .font(regular_font(13.0)),
+                                        .font(font_regular(13.0)),
                                 )
+                                .corner_radius(0)
                                 .selected(selected)
                                 .wrap()
                                 .min_size(Vec2::new(ui.available_width(), 0.0)),
@@ -548,7 +498,7 @@ pub fn show(
             },
         );
         let (status, unavailable) = device_status(extras.device.as_deref(), devices);
-        let mut text = egui::RichText::new(status).font(regular_font(12.0));
+        let mut text = egui::RichText::new(status).font(font_regular(12.0));
         if unavailable {
             text = text.color(theme.scheme.error);
         }
@@ -566,14 +516,14 @@ pub fn show(
             egui::TextEdit::singleline(&mut settings.content_language)
                 .desired_width(70.0)
                 .char_limit(8)
-                .font(regular_font(15.0)),
+                .font(font_regular(15.0)),
         );
         ui.label(caption(theme, "Country"));
         let country = ui.add(
             egui::TextEdit::singleline(&mut settings.content_country)
                 .desired_width(70.0)
                 .char_limit(8)
-                .font(regular_font(15.0)),
+                .font(font_regular(15.0)),
         );
         if language.changed() || country.changed() {
             changed = true;
@@ -583,6 +533,45 @@ pub fn show(
         theme,
         "Used for InnerTube metadata and search; applies on the next launch.",
     ));
+
+    let home_anchor = egui::Rect::from_min_size(ui.cursor().min, Vec2::new(1.0, 1.0));
+    section(ui, theme, "Home");
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = DP8;
+        for (page, label) in [
+            (HomePage::Home, "Home"),
+            (HomePage::Explore, "Explore"),
+            (HomePage::Charts, "Charts"),
+            (HomePage::NewReleases, "New Releases"),
+        ] {
+            if chip(ui, theme, label, settings.home.page == page).clicked()
+                && settings.home.page != page
+            {
+                settings.home.page = page;
+                actions.push(SettingsAction::HomeViewChanged);
+            }
+        }
+    });
+    ui.label(caption(
+        theme,
+        "Shelves to show; none selected keeps every shelf.",
+    ));
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = DP8;
+        for (title, id) in home_sections {
+            if chip(
+                ui,
+                theme,
+                title,
+                home_section_enabled(&settings.home.sections, id),
+            )
+            .clicked()
+            {
+                toggle_home_section(&mut settings.home.sections, home_sections, id);
+                actions.push(SettingsAction::HomeViewChanged);
+            }
+        }
+    });
 
     section(ui, theme, "Network");
     ui.horizontal_wrapped(|ui| {
@@ -604,7 +593,7 @@ pub fn show(
                 egui::TextEdit::singleline(&mut settings.proxy.url)
                     .hint_text("http://127.0.0.1:8080")
                     .desired_width((width - 70.0).max(120.0))
-                    .font(regular_font(15.0)),
+                    .font(font_regular(15.0)),
             );
             if url.changed() {
                 changed = true;
@@ -615,14 +604,14 @@ pub fn show(
             let user = ui.add(
                 egui::TextEdit::singleline(&mut settings.proxy.username)
                     .desired_width(130.0)
-                    .font(regular_font(15.0)),
+                    .font(font_regular(15.0)),
             );
             ui.label(caption(theme, "Password"));
             let password = ui.add(
                 egui::TextEdit::singleline(&mut settings.proxy.password)
                     .password(true)
                     .desired_width(130.0)
-                    .font(regular_font(15.0)),
+                    .font(font_regular(15.0)),
             );
             if user.changed() || password.changed() {
                 changed = true;
@@ -631,7 +620,7 @@ pub fn show(
         if sanitize_proxy_url(&settings.proxy.url).is_none() {
             ui.label(
                 egui::RichText::new("Enter an http:// or https:// proxy URL.")
-                    .font(regular_font(12.0))
+                    .font(font_regular(12.0))
                     .color(theme.scheme.error),
             );
         }
@@ -725,7 +714,7 @@ pub fn show(
             {
                 ui.label(
                     egui::RichText::new(crate::pure::TRANSLATION_ENDPOINT_MESSAGE)
-                        .font(regular_font(12.0))
+                        .font(font_regular(12.0))
                         .color(theme.scheme.error),
                 );
             }
@@ -766,7 +755,7 @@ pub fn show(
         if translation_key.is_empty() {
             ui.label(
                 egui::RichText::new(crate::pure::TRANSLATION_MISSING_KEY_MESSAGE)
-                    .font(regular_font(12.0))
+                    .font(font_regular(12.0))
                     .color(theme.scheme.on_surface_variant),
             );
         }
@@ -782,7 +771,7 @@ pub fn show(
     if !any_provider(&settings.lyrics) {
         ui.label(
             egui::RichText::new("No provider enabled — lyrics will stay empty.")
-                .font(regular_font(12.0))
+                .font(font_regular(12.0))
                 .color(theme.scheme.error),
         );
     }
@@ -796,7 +785,7 @@ pub fn show(
         let mut discord_changed = false;
         ui.label(
             egui::RichText::new("Last.fm")
-                .font(medium_font(TITLE_MEDIUM))
+                .font(font_medium(TITLE_MEDIUM))
                 .color(theme.scheme.on_surface),
         );
         ui.horizontal_wrapped(|ui| {
@@ -898,14 +887,14 @@ pub fn show(
             if let Some(error) = &lastfm.error {
                 ui.label(
                     egui::RichText::new(error)
-                        .font(regular_font(12.0))
+                        .font(font_regular(12.0))
                         .color(theme.scheme.error),
                 );
             }
             if let Some(error) = &lastfm_status.last_error {
                 ui.label(
                     egui::RichText::new(error)
-                        .font(regular_font(12.0))
+                        .font(font_regular(12.0))
                         .color(theme.scheme.error),
                 );
             }
@@ -921,7 +910,7 @@ pub fn show(
             if let Some(error) = &lastfm.error {
                 ui.label(
                     egui::RichText::new(error)
-                        .font(regular_font(12.0))
+                        .font(font_regular(12.0))
                         .color(theme.scheme.error),
                 );
             }
@@ -930,7 +919,7 @@ pub fn show(
         ui.add_space(DP8);
         ui.label(
             egui::RichText::new("Discord")
-                .font(medium_font(TITLE_MEDIUM))
+                .font(font_medium(TITLE_MEDIUM))
                 .color(theme.scheme.on_surface),
         );
         ui.horizontal_wrapped(|ui| {
@@ -962,7 +951,7 @@ pub fn show(
             if let Some(error) = &discord_status.last_error {
                 ui.label(
                     egui::RichText::new(error)
-                        .font(regular_font(12.0))
+                        .font(font_regular(12.0))
                         .color(theme.scheme.error),
                 );
             }
@@ -1031,8 +1020,8 @@ pub fn show(
             }
         });
         ui.label(
-            egui::RichText::new(format!("Folder: {}", download_dir.display()))
-                .font(regular_font(12.0))
+            egui::RichText::new(format!("FOLDER {}", download_dir.display()))
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface_variant),
         );
         ui.label(caption(
@@ -1085,7 +1074,7 @@ pub fn show(
     } else {
         ui.label(
             egui::RichText::new(download_error.unwrap_or("Download manager did not start."))
-                .font(regular_font(12.0))
+                .font(font_regular(12.0))
                 .color(theme.scheme.error),
         );
     }
@@ -1104,8 +1093,8 @@ pub fn show(
         }
     });
     ui.label(
-        egui::RichText::new(format!("Library database: {}", db_path.display()))
-            .font(regular_font(12.0))
+        egui::RichText::new(format!("LIBRARY DATABASE {}", db_path.display()))
+            .font(font_label(11.0))
             .color(theme.scheme.on_surface_variant),
     );
     ui.label(caption(
@@ -1116,7 +1105,7 @@ pub fn show(
     section(ui, theme, "About");
     ui.label(
         egui::RichText::new(format!("Metrolist Desktop {}", env!("CARGO_PKG_VERSION")))
-            .font(medium_font(TITLE_MEDIUM))
+            .font(font_medium(TITLE_MEDIUM))
             .color(theme.scheme.on_surface),
     );
     ui.label(caption(theme, "License: GPL-3.0-only"));
@@ -1126,7 +1115,7 @@ pub fn show(
     ));
     ui.label(caption(
         theme,
-        "Built with egui, material-colors, mpv, Symphonia, SQLite and the InnerTube web client.",
+        "Built with egui and the Nothing design system, mpv, Symphonia, SQLite and the InnerTube web client.",
     ));
     ui.add_space(DP4);
     ui.label(caption(
@@ -1140,6 +1129,8 @@ pub fn show(
         ui.scroll_to_rect(sleep_anchor, Some(egui::Align::TOP));
     } else if focus_audio {
         ui.scroll_to_rect(audio_anchor, Some(egui::Align::TOP));
+    } else if focus_home {
+        ui.scroll_to_rect(home_anchor, Some(egui::Align::TOP));
     }
     if changed {
         actions.push(SettingsAction::Changed);
@@ -1149,26 +1140,56 @@ pub fn show(
 }
 
 fn section(ui: &mut Ui, theme: &Theme, title: &str) {
-    ui.add_space(DP16);
+    ui.add_space(DP24);
     ui.label(
-        egui::RichText::new(title)
-            .font(bold_font(TITLE_MEDIUM))
-            .color(theme.scheme.primary),
+        egui::RichText::new(title.to_ascii_uppercase())
+            .font(font_label(11.0))
+            .color(theme.scheme.on_surface),
     );
+    divider(ui, theme);
+    ui.add_space(DP4);
 }
 
 fn caption<'a>(theme: &Theme, text: &'a str) -> egui::RichText {
     egui::RichText::new(text)
-        .font(regular_font(BODY_SMALL))
+        .font(font_regular(BODY_SMALL))
         .color(theme.scheme.on_surface_variant)
 }
 
-fn seed_color(seed: u32) -> Color32 {
-    Color32::from_rgb(
-        ((seed >> 16) & 0xFF) as u8,
-        ((seed >> 8) & 0xFF) as u8,
-        (seed & 0xFF) as u8,
-    )
+/// `VL…` playlist ids are generated per session, so they are stored as `VL`.
+fn home_section_family(id: &str) -> &str {
+    if id.starts_with("VL") {
+        "VL"
+    } else {
+        id
+    }
+}
+
+fn home_section_enabled(sections: &[String], id: &str) -> bool {
+    sections.is_empty()
+        || sections
+            .iter()
+            .any(|prefix| id.starts_with(prefix.as_str()))
+}
+
+/// Empty means "all", so the first untick starts from every family but this one.
+fn toggle_home_section(sections: &mut Vec<String>, all: &[(String, String)], id: &str) {
+    let family = home_section_family(id);
+    if sections.is_empty() {
+        for (_, other) in all {
+            let other = home_section_family(other);
+            if other != family && !sections.iter().any(|entry| entry == other) {
+                sections.push(other.to_string());
+            }
+        }
+    } else if let Some(pos) = sections
+        .iter()
+        .position(|prefix| id.starts_with(prefix.as_str()))
+    {
+        sections.remove(pos);
+    } else {
+        sections.push(family.to_string());
+    }
 }
 
 fn memory_text(bytes: usize) -> String {
@@ -1237,10 +1258,12 @@ mod tests {
                             &mut settings,
                             SettingsStatus {
                                 extras: &mut extras,
+                                home_sections: &[],
                                 crossfade_available: true,
                                 focus_playback: false,
                                 focus_sleep: false,
                                 focus_audio: false,
+                                focus_home: false,
                                 image_cache: 0,
                                 image_cache_bytes: 0,
                                 db_path: Path::new("/tmp/metrolist.db"),
@@ -1308,10 +1331,12 @@ mod tests {
                         &mut settings,
                         SettingsStatus {
                             extras: &mut extras,
+                            home_sections: &[],
                             crossfade_available: true,
                             focus_playback: false,
                             focus_sleep: false,
                             focus_audio: false,
+                            focus_home: false,
                             image_cache: 0,
                             image_cache_bytes: 0,
                             db_path: Path::new("/tmp/metrolist.db"),

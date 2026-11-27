@@ -9,10 +9,9 @@ use crate::art::ArtCache;
 use crate::pure::expiry_hint;
 use crate::services::Services;
 use crate::state::{AccountState, SyncCounts};
-use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, DP12, DP4, DP8, TITLE_LARGE, TITLE_MEDIUM,
-};
-use crate::widgets::{art_or_placeholder, filled_button, outlined_button};
+use crate::theme::fonts::{font_bold, font_label, font_regular};
+use crate::theme::{Theme, DP12, DP4, DP8, TITLE_LARGE, TITLE_MEDIUM};
+use crate::widgets::{art_or_placeholder, divider, filled_button, outlined_button};
 
 use super::measured_column;
 
@@ -72,33 +71,33 @@ fn signed_out(
     ui.add_space(DP4);
     ui.label(
         egui::RichText::new("YouTube Music account")
-            .font(bold_font(TITLE_LARGE))
+            .font(font_bold(TITLE_LARGE))
             .color(theme.scheme.on_surface),
     );
     ui.label(
         egui::RichText::new("Sign in by importing cookies exported from a browser that is signed in to music.youtube.com.")
-            .font(regular_font(13.0))
+            .font(font_regular(13.0))
             .color(theme.scheme.on_surface_variant),
     );
     ui.add_space(DP12);
 
     if let Some(cache) = state.cache.as_ref() {
         ui.label(
-            egui::RichText::new(format!("Last cached account: {}", cache.info.name))
-                .font(medium_font(13.0))
+            egui::RichText::new(format!("LAST CACHED ACCOUNT {}", cache.info.name))
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface),
         );
         if let Some(contact) = contact_line(&cache.info.masked()) {
             ui.label(
                 egui::RichText::new(contact)
-                    .font(regular_font(12.0))
+                    .font(font_label(11.0))
                     .color(theme.scheme.on_surface_variant),
             );
         }
         if cache.synced_at.is_some() {
             ui.label(
                 egui::RichText::new(sync_label(cache.counts))
-                    .font(regular_font(12.0))
+                    .font(font_label(11.0))
                     .color(theme.scheme.on_surface_variant),
             );
         }
@@ -106,8 +105,8 @@ fn signed_out(
     }
 
     ui.label(
-        egui::RichText::new("Cookies file path")
-            .font(medium_font(13.0))
+        egui::RichText::new("COOKIES FILE PATH")
+            .font(font_label(11.0))
             .color(theme.scheme.on_surface),
     );
     ui.add(
@@ -137,21 +136,21 @@ fn signed_out(
     match state.browser_profile.as_deref() {
         Some(profile) => ui.label(
             egui::RichText::new(format!("Newest LibreWolf/Firefox profile: {profile}"))
-                .font(regular_font(12.0))
+                .font(font_regular(12.0))
                 .color(theme.scheme.on_surface_variant),
         ),
         None => ui.label(
             egui::RichText::new(
                 "No LibreWolf/Firefox profile with a readable cookie database was detected.",
             )
-            .font(regular_font(12.0))
+            .font(font_regular(12.0))
             .color(theme.scheme.on_surface_variant),
         ),
     };
     ui.add_space(DP8);
     ui.label(
         egui::RichText::new("A stale export can be rejected. The saved session rotates only while the source browser remains signed in; the cookies file is stored privately (0600).")
-            .font(regular_font(12.0))
+            .font(font_regular(12.0))
             .color(theme.scheme.on_surface_variant),
     );
 
@@ -161,7 +160,7 @@ fn signed_out(
             ui.spinner();
             ui.label(
                 egui::RichText::new("Checking cookies with YouTube Music…")
-                    .font(regular_font(13.0))
+                    .font(font_regular(13.0))
                     .color(theme.scheme.on_surface_variant),
             );
         });
@@ -182,14 +181,14 @@ fn signed_in(
         ui.add_space(DP4);
         ui.label(
             egui::RichText::new("Signed in")
-                .font(bold_font(TITLE_LARGE))
+                .font(font_bold(TITLE_LARGE))
                 .color(theme.scheme.on_surface),
         );
         ui.label(
             egui::RichText::new(
                 "A cookie session is loaded, but account details have not been fetched yet.",
             )
-            .font(regular_font(13.0))
+            .font(font_regular(13.0))
             .color(theme.scheme.on_surface_variant),
         );
         ui.add_space(DP12);
@@ -209,20 +208,20 @@ fn signed_in(
     ui.add_space(DP8);
     ui.label(
         egui::RichText::new(&info.name)
-            .font(bold_font(TITLE_MEDIUM))
+            .font(font_bold(TITLE_MEDIUM))
             .color(theme.scheme.on_surface),
     );
     if let Some(contact) = contact_line(&info.masked()) {
         ui.label(
             egui::RichText::new(contact)
-                .font(regular_font(13.0))
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface_variant),
         );
     }
     if let Some(hint) = expiry_hint(state.session.expires_at, unix_now()) {
         ui.label(
             egui::RichText::new(hint)
-                .font(regular_font(12.0))
+                .font(font_regular(12.0))
                 .color(theme.scheme.on_surface_variant),
         );
     }
@@ -249,34 +248,35 @@ fn signed_in(
     ui.add_space(DP12);
     if state.session.synced_at.is_some() || state.session.counts.total() > 0 {
         ui.label(
-            egui::RichText::new("Last library sync")
-                .font(medium_font(13.0))
+            egui::RichText::new("LAST LIBRARY SYNC")
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface),
         );
         ui.label(
             egui::RichText::new(sync_label(state.session.counts))
-                .font(regular_font(13.0))
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface_variant),
         );
     } else {
         ui.label(
             egui::RichText::new("No library sync yet. Syncing upserts songs, albums, artists and playlists into the local database.")
-                .font(regular_font(12.0))
+                .font(font_regular(12.0))
                 .color(theme.scheme.on_surface_variant),
         );
     }
+    divider(ui, theme);
     ui.label(
         egui::RichText::new(format!(
-            "Session cookies: {}",
+            "SESSION COOKIES {}",
             state.session.snapshot.cookie_count
         ))
-        .font(regular_font(11.0))
+        .font(font_label(11.0))
         .color(theme.scheme.on_surface_variant),
     );
     ui.add_space(DP8);
     ui.label(
         egui::RichText::new("The session file is private (0600). Cookies rotate only while the source browser is signed in; if Google rejects them, import a fresh export.")
-            .font(regular_font(12.0))
+            .font(font_regular(12.0))
             .color(theme.scheme.on_surface_variant),
     );
     if state.loading || state.syncing {
@@ -289,7 +289,7 @@ fn signed_in(
                 } else {
                     "Refreshing account…"
                 })
-                .font(regular_font(12.0))
+                .font(font_regular(12.0))
                 .color(theme.scheme.on_surface_variant),
             );
         });
@@ -317,7 +317,7 @@ fn error_text(ui: &mut Ui, theme: &Theme, error: &str) {
     ui.add_space(DP8);
     ui.label(
         egui::RichText::new(error)
-            .font(regular_font(12.0))
+            .font(font_regular(12.0))
             .color(theme.scheme.error),
     );
 }

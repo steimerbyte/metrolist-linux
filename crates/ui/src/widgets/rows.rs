@@ -1,14 +1,16 @@
 //! List rows and album cards.
 
 use eframe::egui::{
-    self, Color32, CursorIcon, Pos2, Rect, Response, Sense, Shape, Stroke, TextureHandle, Ui, Vec2,
+    self, CursorIcon, Pos2, Rect, Response, Sense, Shape, Stroke, TextureHandle, Ui, Vec2,
 };
 use egui::{StrokeKind, WidgetInfo};
 
 use super::{art_or_placeholder, card_hover_stroke, elided, paint_icon, text_width};
 use crate::motion;
 use crate::pure::{download_click, download_hint, download_icon, DownloadBadge, DownloadClick};
-use crate::theme::{medium_font, regular_font, Theme, DP12, DP4, DP8};
+use crate::theme::{
+    medium_font, regular_font, Theme, DP12, DP4, DP8, SHAPE_EXTRA_SMALL, SHAPE_LARGE,
+};
 use ml_core::Song;
 
 /// Result of [`song_row`]: the row click plus its download affordance.
@@ -52,14 +54,15 @@ pub fn song_row(
     let (hover_t, press_t) = motion::interaction(ui, &response);
     let active_t = motion::t(ui, response.id.with("active"), active, motion::HOVER);
     if active_t > 0.0 || hover_t > 0.0 || press_t > 0.0 {
-        let base = app_theme
-            .bg()
-            .lerp_to_gamma(app_theme.scheme.surface_container_high, active_t);
-        let fill = motion::state_layer_at(base, hover_t, press_t);
-        ui.painter().rect_filled(rect, 8, fill);
+        let base = app_theme.bg().lerp_to_gamma(
+            app_theme.scheme.surface_container_high,
+            active_t.max(hover_t),
+        );
+        let fill = base.lerp_to_gamma(app_theme.scheme.surface_container_highest, press_t * 0.6);
+        ui.painter().rect_filled(rect, 0, fill);
     }
     let art_rect = Rect::from_min_size(rect.left_top() + Vec2::new(0.0, DP4), Vec2::splat(56.0));
-    art_or_placeholder(ui, app_theme, art, art_rect, 4);
+    art_or_placeholder(ui, app_theme, art, art_rect, SHAPE_EXTRA_SMALL);
 
     let text_x = art_rect.right() + DP12;
     // 40 dp targets 40 dp apart: the radio and download rects touch but never
@@ -115,7 +118,7 @@ pub fn song_row(
                     Pos2::new(rect.left(), rect.bottom()),
                     Pos2::new(rect.right(), rect.bottom()),
                 ],
-                Stroke::new(1.0, app_theme.scheme.primary),
+                Stroke::new(1.0, app_theme.scheme.on_surface),
             );
         }
         response.widget_info(|| {
@@ -134,7 +137,7 @@ pub fn song_row(
         Sense::click(),
     );
     let color = match download {
-        DownloadBadge::Completed => app_theme.scheme.primary,
+        DownloadBadge::Completed => app_theme.scheme.success,
         DownloadBadge::Failed => app_theme.scheme.error,
         _ => app_theme.scheme.on_surface_variant,
     };
@@ -158,7 +161,7 @@ pub fn song_row(
             .collect();
         ui.painter().add(egui::Shape::line(
             arc,
-            Stroke::new(2.0, app_theme.scheme.primary),
+            Stroke::new(2.0, app_theme.scheme.on_surface),
         ));
     }
     let download_action = download_click(download);
@@ -222,7 +225,7 @@ pub fn album_card(
     let width = width.max(72.0);
     let (rect, card) = ui.allocate_exact_size(Vec2::new(width, width + 56.0), Sense::click());
     let art_rect = Rect::from_min_size(rect.left_top(), Vec2::splat(width));
-    art_or_placeholder(ui, app_theme, art, art_rect, 8);
+    art_or_placeholder(ui, app_theme, art, art_rect, SHAPE_LARGE);
     let badge_center = art_rect.right_bottom() - Vec2::new(22.0, 22.0);
     let play_rect = Rect::from_center_size(badge_center, Vec2::splat(48.0));
     let play = ui.interact(
@@ -238,25 +241,18 @@ pub fn album_card(
     );
     if hover_t > 0.0 {
         let stroke = card_hover_stroke(app_theme);
-        let color = Color32::from_rgba_unmultiplied(
-            stroke.color.r(),
-            stroke.color.g(),
-            stroke.color.b(),
-            (stroke.color.a() as f32 * hover_t).round() as u8,
-        );
         ui.painter().rect_stroke(
             art_rect,
-            8,
-            Stroke::new(stroke.width, color),
+            SHAPE_LARGE,
+            Stroke::new(stroke.width, stroke.color.gamma_multiply(hover_t)),
             StrokeKind::Inside,
         );
     }
     let badge_scale = motion::lerp(1.0, motion::BADGE_SCALE, hover_t);
-    let badge_alpha = motion::lerp(160.0, 210.0, hover_t).round() as u8;
     ui.painter().circle_filled(
         badge_center,
         16.0 * badge_scale,
-        Color32::from_black_alpha(badge_alpha),
+        app_theme.scheme.on_surface,
     );
     ui.painter().add(Shape::convex_polygon(
         vec![
@@ -264,7 +260,7 @@ pub fn album_card(
             badge_center + Vec2::new(-4.0, 6.0) * badge_scale,
             badge_center + Vec2::new(6.0, 0.0) * badge_scale,
         ],
-        Color32::WHITE,
+        app_theme.scheme.surface,
         Stroke::NONE,
     ));
     play.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, format!("Play {title}")));
@@ -315,8 +311,8 @@ pub fn playing_bars(ui: &mut Ui, app_theme: &Theme, rect: Rect, playing: bool) {
         let x = center.x - 6.0 + i as f32 * 6.0;
         ui.painter().rect_filled(
             Rect::from_center_size(Pos2::new(x, center.y), Vec2::new(3.0, height)),
-            1,
-            app_theme.scheme.primary,
+            0,
+            app_theme.scheme.on_surface,
         );
     }
 }

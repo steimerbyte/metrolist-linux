@@ -1,0 +1,3 @@
+# Boot sequence entry; delete this file to keep the crate out of the boot registry.
+label = CORE
+order = 10

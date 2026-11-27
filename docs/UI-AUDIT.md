@@ -1,4 +1,78 @@
-# Metrolist Linux UI audit (2026-11-02)
+# Metrolist Linux UI audit
+
+## Current: Nothing build (2026-11-27)
+
+Fresh capture of the Nothing redesign; source reviewed, nothing fabricated.
+
+| Evidence | Command / file | Result |
+|---|---|---|
+| 10 frames, 405×900 | `docs/ui-{home,search,library,settings,player}-{dark,light}.png` | All ten written by the current binary; `theme: dark surface=#000000 primary=#E8E8E8` / `theme: light surface=#F5F5F5 primary=#1A1A1A` in every run log |
+| No hard-coded colours in UI layout | `grep -rn "Color32::from_rgb\|from_gray\|from_rgba" crates/ui/src/{screens,shell,widgets}` | 0 hits |
+| No elevation | `grep -rn Shadow crates/ui/src` | 3 hits, all `Shadow::NONE` |
+| No Material 3 dependency | `grep -c material-colors Cargo.lock` | 0 |
+| Boot overlay | `cargo`-free proof in `docs/ui-boot-sequence{,-done}.png`; `BOOT modules=10 total_ms=1760` | shown |
+
+Contrast (WCAG 2.1, computed from the palette, not sampled from pixels):
+
+| Role | Dark | Light | Use |
+|---|---|---|---|
+| on_surface / surface | 17.14 | 15.96 | body text |
+| on_surface_variant / surface | 7.37 | 5.27 | subtitles |
+| success / surface | 6.34 | 5.24 | status text |
+| warning / surface | 9.48 | 5.18 | status text |
+| error / surface | **4.05** | 5.53 | fills and badges only; below AA for text |
+| on_error / error | 5.18 | 6.03 | text on red fills |
+
+Open findings (all measured, none blocking):
+
+1. **Error red as text is 4.05:1 (dark)**, below the 4.5:1 AA floor. It is used
+   as a fill/badge colour only, which is compliant; if it ever becomes body
+   text, raise the role's lightness.
+2. **`--screenshot W H` is advisory on tiling compositors.** With this repo's
+   Hyprland setup the window was tiled to 1265×1385 and the framebuffer
+   followed the tile; a floating window rule (`hl.window_rule({ match = {
+   class = "^(metrolist)$" }, float = true, size = { 405, 900 } })`) produced
+   exactly 405×900. The app prints the real size (`screenshot written: …`), so
+   verify it rather than trusting the argument.
+3. **Cover art in `--screenshot` can lag.** Mode captures 0.35 s after the
+   feed reports idle; live home covers load later, so `docs/ui-home-*` were
+   taken from a focused compositor window at 12 s instead.
+4. **A translucent window looks like a cover bleed.** The earlier "player
+   backdrop bleed" was the compositor: `decoration:inactive_opacity = 0.85`
+   (active 0.95) lets the wallpaper through. `player::backdrop` paints only
+   `bg()`. Grim captures need a focused window or an `opacity "1.0 override"`
+   rule; framebuffer captures are unaffected.
+5. **Top-bar avatar** is a generic two-tone circle until an account is
+   connected (deliberate; Nothing uses a dot avatar).
+6. **The boot overlay is skipped with reduce motion.** `METROLIST_REDUCE_MOTION=1`
+   or Settings → Reduce motion sets `boot.rs` to `skip`, so the 1.76 s sequence
+   never paints (the `BOOT module=… status=ok` lines are printed either way).
+   `docs/ui-boot-sequence*.png` were therefore captured without that variable;
+   with it exported in the shell every launch starts straight into Home.
+
+### Diff since the captured binary
+
+The ten frames and the boot overlay come from `.target-lead/debug/metrolist`
+built at 08:21. Only these changes touched the UI crate afterwards:
+
+| Change | Files | Rendered path |
+|---|---|---|
+| Deleted `widgets::nav_item` (0 callers) and `motion::nav_pill` (only `nav_item` called it) | `widgets/controls.rs`, `motion.rs` | none |
+| Deleted `widgets::filled_icon_button_swap` (0 callers; `paint_filled_face` and `paint_icon_swap` stay, used by `filled_icon_button`) | `widgets/controls.rs` | none |
+| Chip corner radius `motion::chip_radius(t) as u8` → `u8::MAX`. `chip_radius` returned `999.0` and Rust's float→int cast saturates, so the old value was already `255`: same value, dead helper removed | `widgets/controls.rs`, `motion.rs` | none (identical value) |
+| `AudioSource` implementation moved to `ui::audio_source::InnerTubeAudioSource`; `DownloadManager::new` deleted | `crates/downloads/*`, `ui/audio_source.rs`, `ui/services.rs` | none |
+| Player polish pass: error text on `on_error_container` (6.29:1) with an inline RETRY, toast suppressed while the player is open, cover radius `SHAPE_LARGE` (16), seek/volume hitbox 44 dp, toast inset 24 dp on the player route | `screens/player.rs`, `app.rs`, `widgets/{feedback,controls}.rs` | **full player route** |
+
+Checked with `grep -rn "nav_item\|nav_pill\|filled_icon_button_swap\|chip_radius"
+crates/ui/src` → 0 hits. The shim and download changes above are
+transport-side and touch no rendered path. The player polish pass is the first
+change since 08:21 that alters rendered output: every frame except the full
+player stays valid; the player frame is stale until the next capture.
+
+Everything below is the 0.1.3 Material 3 audit and is kept as history; it does
+not describe the current interface.
+
+## 0.1.3 Material 3 build (2026-11-02)
 
 Fresh capture and visual review of the native egui/M3 port in this repository.
 Source was not modified.

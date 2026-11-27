@@ -7,7 +7,10 @@ use crate::art::ArtCache;
 use crate::pure::{playlist_move_target, playlist_songs, PlaylistOrder};
 use crate::services::Services;
 use crate::state::LocalPlaylistState;
-use crate::theme::{bold_font, regular_font, Theme, DP12, DP24, DP4, DP8, TITLE_LARGE};
+use crate::theme::{
+    font_label, medium_font, regular_font, Theme, BODY_LARGE, BODY_MEDIUM, DP12, DP24, DP4, DP8,
+    HEADLINE_SMALL, LABEL_SMALL,
+};
 use crate::widgets::{
     empty_state, filled_button, icon_button, outlined_button, section_header, song_row,
     SongRowOptions,
@@ -55,7 +58,7 @@ pub fn show(
     ui.add_space(DP4);
     ui.label(
         egui::RichText::new(&view.name)
-            .font(bold_font(TITLE_LARGE))
+            .font(medium_font(HEADLINE_SMALL))
             .color(theme.scheme.on_surface),
     );
     ui.label(
@@ -63,12 +66,12 @@ pub fn show(
             "{} {}",
             view.songs.len(),
             if view.songs.len() == 1 {
-                "song"
+                "SONG"
             } else {
-                "songs"
+                "SONGS"
             }
         ))
-        .font(regular_font(13.0))
+        .font(font_label(LABEL_SMALL))
         .color(theme.scheme.on_surface_variant),
     );
     ui.add_space(DP8);
@@ -115,9 +118,9 @@ pub fn show(
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = DP8;
             let edit = egui::TextEdit::singleline(&mut name)
-                .hint_text("Playlist name")
+                .hint_text(egui::RichText::new("PLAYLIST NAME").font(font_label(LABEL_SMALL)))
                 .desired_width((width - 150.0).max(100.0))
-                .font(regular_font(16.0));
+                .font(regular_font(BODY_LARGE));
             ui.add(edit);
             if filled_button(ui, theme, None, "Save").clicked() && !name.trim().is_empty() {
                 intents.push(Intent::RenameLocalPlaylist {
@@ -125,7 +128,7 @@ pub fn show(
                     name: name.trim().to_string(),
                 });
                 state.rename = None;
-            } else if ui.button("Cancel").clicked() {
+            } else if outlined_button(ui, theme, "Cancel").clicked() {
                 state.rename = None;
             }
             if state.rename.is_some() {
@@ -140,7 +143,7 @@ pub fn show(
             ui.spacing_mut().item_spacing.x = DP8;
             ui.label(
                 egui::RichText::new(format!("Delete “{}”?", view.name))
-                    .font(regular_font(14.0))
+                    .font(regular_font(BODY_MEDIUM))
                     .color(theme.scheme.error),
             );
             if filled_button(ui, theme, Some("delete"), "Delete").clicked() {

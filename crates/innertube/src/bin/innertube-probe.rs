@@ -6,7 +6,7 @@
 use std::env;
 use std::process::ExitCode;
 
-use ml_core::AudioQuality;
+use ml_core::{AudioQuality, HomeView};
 use ml_innertube::{InnertubeClient, SearchFilter};
 use serde_json::{json, Value};
 
@@ -84,7 +84,10 @@ async fn run() -> Result<(), String> {
 
     match command {
         "home" => {
-            let feed = client.home().await.map_err(|e| e.to_string())?;
+            let feed = client
+                .home(HomeView::default().page)
+                .await
+                .map_err(|e| e.to_string())?;
             print(json!({
                 "sections": feed.sections.len(),
                 "continuation": feed.continuation.is_some(),

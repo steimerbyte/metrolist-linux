@@ -4,8 +4,11 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, TextureHandle, Ui, Vec2};
 
 use crate::motion;
 use crate::routes::{Route, Tab};
-use crate::theme::{medium_font, regular_font, Theme, BODY_SMALL, DP20, DP4, DP8, TITLE_LARGE};
-use crate::widgets::{chip, icon_button_at, icon_button_at_swap, nav_item, paint_icon};
+use crate::theme::{
+    font_label, medium_font, regular_font, Theme, BODY_SMALL, DP20, DP8, HEADLINE_SMALL,
+    LABEL_SMALL, TOUCH,
+};
+use crate::widgets::{chip, icon_button_at, icon_button_at_swap, paint_icon};
 use ml_core::Song;
 
 /// Right-hand action cluster of the top app bar: 40 dp history + sync + avatar
@@ -87,11 +90,15 @@ pub fn top_bar(
     let title_max = (rect.width() - title_x - TITLE_ACTIONS).max(0.0);
     crate::widgets::elided(
         ui.painter(),
-        rect.left_top() + Vec2::new(title_x, 13.0),
+        rect.left_top() + Vec2::new(title_x, 12.0),
         title,
-        medium_font(TITLE_LARGE),
+        medium_font(HEADLINE_SMALL),
         app_theme.scheme.on_surface,
         title_max,
+    );
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        app_theme.hairline(),
     );
 
     let avatar_center = Pos2::new(rect.right() - 22.0, rect.center().y);
@@ -102,27 +109,19 @@ pub fn top_bar(
         Sense::click(),
     );
     ui.painter()
-        .circle_filled(avatar_center, 14.0, Color32::from_rgb(0x3A, 0x4A, 0x5A));
+        .circle_filled(avatar_center, 14.0, app_theme.scheme.surface_container_high);
+    ui.painter()
+        .circle_stroke(avatar_center, 14.0, app_theme.hairline());
     ui.painter().circle_filled(
         avatar_center + Vec2::new(0.0, 3.0),
         5.0,
-        Color32::from_rgb(0x7A, 0x8A, 0x9A),
+        app_theme.scheme.on_surface_variant,
     );
-    let (avatar_hover, _) = motion::interaction(ui, &avatar);
-    if avatar_hover > 0.0 {
-        let outline = app_theme.scheme.outline;
+    if avatar.hovered() {
         ui.painter().circle_stroke(
             avatar_center,
             16.0,
-            egui::Stroke::new(
-                1.0,
-                egui::Color32::from_rgba_unmultiplied(
-                    outline.r(),
-                    outline.g(),
-                    outline.b(),
-                    (outline.a() as f32 * avatar_hover).round() as u8,
-                ),
-            ),
+            egui::Stroke::new(1.0, app_theme.scheme.outline),
         );
     }
     motion::focus_ring(ui, avatar_rect, 20, &avatar);
@@ -204,17 +203,23 @@ pub fn mini_player(
     let previous_opacity = ui.opacity();
     ui.set_opacity(previous_opacity * enter_t);
     let rect = outer.shrink2(Vec2::new(0.0, 2.0 + 2.0 * (1.0 - enter_t)));
+    ui.painter().rect_filled(rect, 0, app_theme.card());
     ui.painter()
-        .rect_filled(rect, 12, app_theme.scheme.surface_container);
+        .line_segment([rect.left_top(), rect.right_top()], app_theme.hairline());
 
     let art_rect = Rect::from_min_size(
         rect.left_center() + Vec2::new(8.0, -22.0),
         Vec2::splat(44.0),
     );
-    crate::widgets::art_or_placeholder(ui, app_theme, texture, art_rect, 6);
+    crate::widgets::art_or_placeholder(ui, app_theme, texture, art_rect, 0);
 
     let text_x = art_rect.right() + 12.0;
-    let controls_left = rect.right() - 132.0;
+    let center_y = rect.center().y;
+    // Three 44 dp targets, 2 dp apart, ending 6 dp from the card edge.
+    let next_x = rect.right() - 6.0 - TOUCH / 2.0;
+    let toggle_x = next_x - TOUCH - 2.0;
+    let previous_x = toggle_x - TOUCH - 2.0;
+    let controls_left = previous_x - TOUCH / 2.0;
     let max_text = (controls_left - 12.0 - text_x).max(20.0);
     crate::widgets::elided(
         ui.painter(),
@@ -234,7 +239,6 @@ pub fn mini_player(
         max_text,
     );
 
-    let center_y = rect.center().y;
     let body_rect = Rect::from_min_max(rect.min, Pos2::new(controls_left, rect.bottom()));
     let body = ui.interact(
         body_rect,
@@ -253,7 +257,7 @@ pub fn mini_player(
         ui,
         app_theme,
         "mini_previous",
-        Rect::from_center_size(Pos2::new(rect.right() - 112.0, center_y), Vec2::splat(40.0)),
+        Rect::from_center_size(Pos2::new(previous_x, center_y), Vec2::splat(TOUCH)),
         "skip_previous",
         "Previous",
         22.0,
@@ -268,7 +272,7 @@ pub fn mini_player(
         ui,
         app_theme,
         "mini_toggle",
-        Rect::from_center_size(Pos2::new(rect.right() - 70.0, center_y), Vec2::splat(44.0)),
+        Rect::from_center_size(Pos2::new(toggle_x, center_y), Vec2::splat(TOUCH)),
         "play_arrow",
         "pause",
         mix,
@@ -279,7 +283,7 @@ pub fn mini_player(
         ui,
         app_theme,
         "mini_next",
-        Rect::from_center_size(Pos2::new(rect.right() - 28.0, center_y), Vec2::splat(40.0)),
+        Rect::from_center_size(Pos2::new(next_x, center_y), Vec2::splat(TOUCH)),
         "skip_next",
         "Next",
         22.0,
@@ -309,19 +313,21 @@ pub fn bottom_nav(
     width: f32,
 ) -> Option<NavAction> {
     let mut chosen = None;
-    ui.add_space(DP4);
-    let top = ui.cursor().min.y;
+    let top = ui.cursor().min;
+    ui.painter()
+        .line_segment([top, top + Vec2::new(width, 0.0)], app_theme.hairline());
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = Vec2::ZERO;
         let item_width = width / (Tab::ALL.len() + 1) as f32;
         for tab in Tab::ALL {
-            let response = nav_item(
+            let response = nav_destination(
                 ui,
                 app_theme,
                 tab.icon(),
                 tab.label(),
                 active == Some(tab),
-                Vec2::new(item_width, 72.0),
+                Vec2::new(item_width, 80.0),
+                Edge::Top,
             );
             if response.clicked() {
                 chosen = Some(NavAction::Tab(tab));
@@ -330,18 +336,19 @@ pub fn bottom_nav(
         let separator_x = ui.cursor().min.x;
         ui.painter().line_segment(
             [
-                egui::pos2(separator_x, top + 16.0),
-                egui::pos2(separator_x, top + 56.0),
+                egui::pos2(separator_x, top.y + 16.0),
+                egui::pos2(separator_x, top.y + 64.0),
             ],
-            egui::Stroke::new(1.0, app_theme.scheme.outline_variant),
+            app_theme.hairline(),
         );
-        let settings = nav_item(
+        let settings = nav_destination(
             ui,
             app_theme,
             "settings",
             "Settings",
             settings_active,
-            Vec2::new(item_width, 72.0),
+            Vec2::new(item_width, 80.0),
+            Edge::Top,
         )
         .on_hover_text("Settings");
         if settings.clicked() {
@@ -359,26 +366,36 @@ pub fn nav_rail(
     settings_active: bool,
 ) -> Option<NavAction> {
     let mut chosen = None;
+    let right = ui.max_rect().right() - 0.5;
+    ui.painter().line_segment(
+        [
+            egui::pos2(right, ui.max_rect().top()),
+            egui::pos2(right, ui.max_rect().bottom()),
+        ],
+        app_theme.hairline(),
+    );
     ui.add_space(DP20);
     let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(88.0, 48.0), Sense::hover());
+    let logo = Rect::from_center_size(logo_rect.center(), Vec2::splat(36.0));
     ui.painter()
-        .circle_filled(logo_rect.center(), 18.0, app_theme.scheme.primary_container);
+        .rect_stroke(logo, 0, app_theme.hairline(), egui::StrokeKind::Inside);
     paint_icon(
         ui.painter(),
-        logo_rect.center(),
+        logo.center(),
         "graphic_eq",
-        22.0,
-        app_theme.scheme.on_primary_container,
+        20.0,
+        app_theme.scheme.on_surface,
     );
     ui.add_space(DP20);
     for tab in Tab::ALL {
-        let response = nav_item(
+        let response = nav_destination(
             ui,
             app_theme,
             tab.icon(),
             tab.label(),
             active == Some(tab),
             Vec2::new(88.0, 72.0),
+            Edge::Left,
         );
         if response.clicked() {
             chosen = Some(NavAction::Tab(tab));
@@ -394,16 +411,17 @@ pub fn nav_rail(
             egui::pos2(separator.left() + 24.0, separator.center().y),
             egui::pos2(separator.right() - 24.0, separator.center().y),
         ],
-        egui::Stroke::new(1.0, app_theme.scheme.outline_variant),
+        app_theme.hairline(),
     );
     ui.add_space(DP8);
-    let settings = nav_item(
+    let settings = nav_destination(
         ui,
         app_theme,
         "settings",
         "Settings",
         settings_active,
         Vec2::new(88.0, 72.0),
+        Edge::Left,
     )
     .on_hover_text("Settings");
     if settings.clicked() {
@@ -413,7 +431,67 @@ pub fn nav_rail(
     chosen
 }
 
-/// Window-class breakpoint matching Material 3 (`>= 840 dp` is expanded).
+/// Edge of a destination that carries the selected 2 px line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    Left,
+    Top,
+}
+
+/// One navigation destination: icon over an uppercase mono label. Nothing OS
+/// has no pill; selection is a hard 2 px line on the bar's inner edge.
+fn nav_destination(
+    ui: &mut Ui,
+    app_theme: &Theme,
+    icon_name: &str,
+    label: &str,
+    selected: bool,
+    size: Vec2,
+    edge: Edge,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    if selected {
+        let line = match edge {
+            Edge::Left => Rect::from_min_size(rect.min, Vec2::new(2.0, rect.height())),
+            Edge::Top => Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)),
+        };
+        ui.painter()
+            .rect_filled(line, 0, app_theme.scheme.on_surface);
+    }
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let color = if selected || response.hovered() {
+        app_theme.scheme.on_surface
+    } else {
+        app_theme.scheme.on_surface_variant
+    };
+    // Icon 22 + 8 gap + label 11 = 41 dp, centred in the destination.
+    let stack = rect.top() + (rect.height() - 41.0) * 0.5;
+    paint_icon(
+        ui.painter(),
+        Pos2::new(rect.center().x, stack + 11.0),
+        icon_name,
+        22.0,
+        color,
+    );
+    let label = label.to_uppercase();
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.clone(), font_label(LABEL_SMALL), color);
+    ui.painter().galley(
+        Pos2::new(rect.center().x - galley.size().x / 2.0, stack + 30.0),
+        galley,
+        color,
+    );
+    motion::focus_ring(ui, rect, 8, &response);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::Tab, true, selected, label.as_str())
+    });
+    response
+}
+
+/// Window-class breakpoint: `>= 840 dp` is expanded.
 pub fn is_expanded(width: f32) -> bool {
     width >= 840.0
 }

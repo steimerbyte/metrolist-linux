@@ -1,11 +1,13 @@
 //! `ml-ui` — eframe/egui shell for Metrolist Linux.
 //!
-//! The skeleton ships the Material 3 theme, custom widgets, responsive shell and
+//! The skeleton ships the Nothing theme, custom widgets, responsive shell and
 //! a mock Home/player. Backend crates are wired by later agents; see
 //! `docs/ARCHITECTURE.md` for the frozen interfaces.
 
 pub mod app;
 pub mod art;
+pub mod audio_source;
+pub mod boot;
 pub mod desktop;
 pub mod integrations;
 pub mod integrations_worker;
@@ -42,11 +44,14 @@ pub enum RunMode {
 pub enum DemoMode {
     Player,
     PlayerPaused,
+    /// Home skeletons: the feed never loads, so every shelf stub stays visible.
+    Loading,
     Queue,
     Lyrics,
     Library,
     Settings,
     SettingsAudio,
+    SettingsHome,
     History,
     Liked,
     Downloads,
@@ -72,6 +77,7 @@ pub enum DemoMode {
 impl DemoMode {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
+            "loading" => Some(Self::Loading),
             "player" => Some(Self::Player),
             "player-paused" => Some(Self::PlayerPaused),
             "queue" => Some(Self::Queue),
@@ -79,6 +85,7 @@ impl DemoMode {
             "library" => Some(Self::Library),
             "settings" => Some(Self::Settings),
             "settings-audio" => Some(Self::SettingsAudio),
+            "settings-home" => Some(Self::SettingsHome),
             "history" => Some(Self::History),
             "liked" => Some(Self::Liked),
             "downloads" => Some(Self::Downloads),
@@ -146,6 +153,13 @@ pub fn run(options: RunOptions) -> eframe::Result {
         .with_title("Metrolist");
     let native_options = eframe::NativeOptions {
         viewport,
+        // Measured 2026-11-27: 71,9 fps on a 143,972 Hz panel, exactly half.
+        // One frame needs 7,012 ms CPU against the 6,944 ms 144 Hz budget, so
+        // the default HIGH_THROUGHPUT queue (latency 2) would only add latency.
+        wgpu_options: eframe::WgpuConfiguration {
+            surface: eframe::SurfaceConfig::LOW_LATENCY,
+            ..Default::default()
+        },
         ..Default::default()
     };
     // Batch modes are tools: they may run next to an interactive instance, and
@@ -165,9 +179,13 @@ pub fn run(options: RunOptions) -> eframe::Result {
     } else {
         None
     };
+    let boot_enabled = matches!(options.mode, RunMode::Normal);
     eframe::run_native(
         "metrolist",
         native_options,
-        Box::new(move |cc| Ok(Box::new(App::new(cc, options, instance)))),
+        Box::new(move |cc| {
+            let app = App::new(cc, options, instance);
+            Ok(Box::new(boot::BootApp::new(app, boot_enabled)))
+        }),
     )
 }

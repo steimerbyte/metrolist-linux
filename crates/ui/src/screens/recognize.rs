@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use eframe::egui::{self, Align2, Pos2, Rect, Sense, Ui, Vec2};
+use eframe::egui::{self, Rect, RichText, Sense, StrokeKind, Ui, Vec2};
 use ml_recognition::RecognitionResult;
 
 use crate::art::ArtCache;
@@ -14,11 +14,43 @@ use crate::pure::{
 use crate::services::Services;
 use crate::state::{RecognitionMatch, RecognitionState, RECOGNITION_SECONDS};
 use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP4, DP8, TITLE_LARGE, TITLE_MEDIUM,
+    bold_font, font_label, regular_font, Theme, DP12, DP16, DP4, DP8, SHAPE_LARGE, TITLE_LARGE,
 };
-use crate::widgets::{art_or_placeholder, filled_button, outlined_button, paint_icon};
+use crate::widgets::{art_or_placeholder, filled_button, outlined_button};
 
 use super::{measured_column, Intent};
+
+fn card(theme: &Theme) -> egui::Frame {
+    egui::Frame::new()
+        .fill(theme.scheme.surface_container)
+        .stroke(theme.hairline())
+        .corner_radius(SHAPE_LARGE)
+        .inner_margin(egui::Margin::same(DP16 as i8))
+}
+
+fn caps(ui: &mut Ui, theme: &Theme, text: &str) {
+    ui.label(
+        RichText::new(text.to_uppercase())
+            .font(font_label(11.0))
+            .color(theme.scheme.on_surface_variant),
+    );
+}
+
+fn heading(ui: &mut Ui, theme: &Theme, text: &str) {
+    ui.label(
+        RichText::new(text)
+            .font(bold_font(TITLE_LARGE))
+            .color(theme.scheme.on_surface),
+    );
+}
+
+fn note(ui: &mut Ui, theme: &Theme, text: &str) {
+    ui.label(
+        RichText::new(text)
+            .font(regular_font(12.0))
+            .color(theme.scheme.on_surface_variant),
+    );
+}
 
 pub fn show(
     ui: &mut Ui,
@@ -30,16 +62,14 @@ pub fn show(
 ) -> Vec<Intent> {
     let mut intents = Vec::new();
     let width = width.min(640.0);
-    measured_column(ui, 640.0, |ui| {
+    measured_column(ui, width, |ui| {
         ui.add_space(DP4);
         match state {
-            RecognitionState::Idle => idle(ui, theme, width, &mut intents),
-            RecognitionState::Listening { started } => {
-                listening(ui, theme, *started, width, &mut intents)
-            }
+            RecognitionState::Idle => idle(ui, theme, &mut intents),
+            RecognitionState::Listening { started } => listening(ui, theme, *started, &mut intents),
             RecognitionState::Processing => processing(ui, theme, &mut intents),
             RecognitionState::Success { matched } => {
-                success(ui, theme, services, art, matched, width, &mut intents)
+                success(ui, theme, services, art, matched, &mut intents)
             }
             RecognitionState::Error { message } => error(ui, theme, message, &mut intents),
         }
@@ -47,151 +77,89 @@ pub fn show(
     intents
 }
 
-fn idle(ui: &mut Ui, theme: &Theme, width: f32, intents: &mut Vec<Intent>) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 204.0), Sense::hover());
-    ui.painter()
-        .rect_filled(rect, 20, theme.scheme.surface_container);
-    ui.painter().circle_filled(
-        Pos2::new(rect.center().x, rect.top() + 58.0),
-        38.0,
-        theme.scheme.secondary_container,
-    );
-    paint_icon(
-        ui.painter(),
-        Pos2::new(rect.center().x, rect.top() + 58.0),
-        "mic",
-        32.0,
-        theme.scheme.on_secondary_container,
-    );
-    ui.painter().text(
-        Pos2::new(rect.center().x, rect.top() + 108.0),
-        Align2::CENTER_TOP,
-        "Recognize what's playing",
-        bold_font(TITLE_LARGE),
-        theme.scheme.on_surface,
-    );
-    ui.painter().text(
-        Pos2::new(rect.center().x, rect.top() + 138.0),
-        Align2::CENTER_TOP,
-        "Record a 12-second sample from your default microphone.",
-        regular_font(13.0),
-        theme.scheme.on_surface_variant,
-    );
-    ui.painter().text(
-        Pos2::new(rect.center().x, rect.top() + 158.0),
-        Align2::CENTER_TOP,
-        "Audio is fingerprinted and discarded; nothing is saved.",
-        regular_font(12.0),
-        theme.scheme.on_surface_variant,
-    );
-    ui.add_space(DP16);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = DP8;
-        if filled_button(ui, theme, Some("mic"), "Start listening").clicked() {
+fn idle(ui: &mut Ui, theme: &Theme, intents: &mut Vec<Intent>) {
+    card(theme).show(ui, |ui| {
+        caps(ui, theme, "Recognize");
+        ui.add_space(DP8);
+        heading(ui, theme, "Recognize what's playing");
+        ui.add_space(DP4);
+        note(
+            ui,
+            theme,
+            "Record a 12-second sample from your default microphone.",
+        );
+        note(
+            ui,
+            theme,
+            "Audio is fingerprinted and discarded; nothing is saved.",
+        );
+        ui.add_space(DP16);
+        if filled_button(ui, theme, None, "Start listening").clicked() {
             intents.push(Intent::StartRecognition);
         }
     });
     ui.add_space(DP8);
-    ui.label(
-        egui::RichText::new("The microphone only opens after you press Start listening.")
-            .font(regular_font(12.0))
-            .color(theme.scheme.on_surface_variant),
+    note(
+        ui,
+        theme,
+        "The microphone only opens after you press Start listening.",
     );
 }
 
-fn listening(ui: &mut Ui, theme: &Theme, started: Instant, width: f32, intents: &mut Vec<Intent>) {
+fn listening(ui: &mut Ui, theme: &Theme, started: Instant, intents: &mut Vec<Intent>) {
     let sample_ms = (f64::from(RECOGNITION_SECONDS) * 1000.0) as u64;
     let elapsed_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
     let progress = recognition_progress(elapsed_ms, sample_ms);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 214.0), Sense::hover());
-    ui.painter()
-        .rect_filled(rect, 20, theme.scheme.surface_container);
-    paint_icon(
-        ui.painter(),
-        Pos2::new(rect.left() + 36.0, rect.top() + 42.0),
-        "mic",
-        32.0,
-        theme.scheme.primary,
-    );
-    ui.painter().text(
-        Pos2::new(rect.left() + 64.0, rect.top() + 24.0),
-        Align2::LEFT_TOP,
-        "Listening…",
-        bold_font(TITLE_LARGE),
-        theme.scheme.on_surface,
-    );
-    ui.painter().text(
-        Pos2::new(rect.left() + 64.0, rect.top() + 55.0),
-        Align2::LEFT_TOP,
-        "Play the music near your microphone.",
-        regular_font(13.0),
-        theme.scheme.on_surface_variant,
-    );
     let timer = recognition_timer_text(elapsed_ms, sample_ms);
-    ui.painter().text(
-        Pos2::new(rect.right() - DP16, rect.top() + 28.0),
-        Align2::RIGHT_TOP,
-        &timer,
-        medium_font(13.0),
-        theme.scheme.on_surface,
-    );
-    let bar = Rect::from_min_size(
-        Pos2::new(rect.left() + DP16, rect.top() + 96.0),
-        Vec2::new((rect.width() - DP16 * 2.0).max(10.0), 8.0),
-    );
-    ui.painter()
-        .rect_filled(bar, 4, theme.scheme.surface_container_highest);
-    let filled = Rect::from_min_size(bar.min, Vec2::new(bar.width() * progress, bar.height()));
-    ui.painter().rect_filled(filled, 4, theme.scheme.primary);
-    let (progress_rect, response) = ui.allocate_exact_size(Vec2::new(1.0, 1.0), Sense::hover());
-    let _ = progress_rect;
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::Role::Label, true, format!("Listening, {timer}"))
-    });
-    ui.add_space(DP16);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = DP8;
+    card(theme).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            caps(ui, theme, "Listening");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    RichText::new(timer.as_str())
+                        .font(font_label(11.0))
+                        .color(theme.scheme.on_surface),
+                );
+            });
+        });
+        ui.add_space(DP8);
+        note(ui, theme, "Play the music near your microphone.");
+        ui.add_space(DP12);
+        let (bar, response) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 2.0), Sense::hover());
+        ui.painter()
+            .rect_filled(bar, 0, theme.scheme.outline_variant);
+        let filled = Rect::from_min_size(bar.min, Vec2::new(bar.width() * progress, bar.height()));
+        ui.painter().rect_filled(filled, 0, theme.scheme.on_surface);
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Label, true, format!("Listening, {timer}"))
+        });
+        ui.add_space(DP16);
         if outlined_button(ui, theme, "Cancel").clicked() {
             intents.push(Intent::CancelRecognition);
         }
     });
     ui.add_space(DP8);
-    ui.label(
-        egui::RichText::new("Cancel closes the microphone before the sample ends.")
-            .font(regular_font(12.0))
-            .color(theme.scheme.on_surface_variant),
+    note(
+        ui,
+        theme,
+        "Cancel closes the microphone before the sample ends.",
     );
 }
 
 fn processing(ui: &mut Ui, theme: &Theme, intents: &mut Vec<Intent>) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 214.0), Sense::hover());
-    ui.painter()
-        .rect_filled(rect, 20, theme.scheme.surface_container);
-    let spinner = egui::Spinner::new().size(38.0).color(theme.scheme.primary);
-    ui.put(
-        Rect::from_center_size(
-            Pos2::new(rect.center().x, rect.top() + 58.0),
-            Vec2::splat(42.0),
-        ),
-        spinner,
-    );
-    ui.painter().text(
-        Pos2::new(rect.center().x, rect.top() + 92.0),
-        Align2::CENTER_TOP,
-        "Identifying…",
-        bold_font(TITLE_LARGE),
-        theme.scheme.on_surface,
-    );
-    ui.painter().text(
-        Pos2::new(rect.center().x, rect.top() + 122.0),
-        Align2::CENTER_TOP,
-        "Comparing the sample with Shazam.",
-        regular_font(13.0),
-        theme.scheme.on_surface_variant,
-    );
-    ui.add_space(DP16);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = DP8;
+    card(theme).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::Spinner::new()
+                    .size(14.0)
+                    .color(theme.scheme.on_surface_variant),
+            );
+            caps(ui, theme, "Identifying");
+        });
+        ui.add_space(DP8);
+        note(ui, theme, "Comparing the sample with Shazam.");
+        ui.add_space(DP16);
         if outlined_button(ui, theme, "Cancel").clicked() {
             intents.push(Intent::CancelRecognition);
         }
@@ -204,7 +172,6 @@ fn success(
     services: &Services,
     art: &mut ArtCache,
     matched: &RecognitionMatch,
-    width: f32,
     intents: &mut Vec<Intent>,
 ) {
     let result = &matched.result;
@@ -213,69 +180,66 @@ fn success(
         .as_deref()
         .or(result.artwork_url.as_deref())
         .unwrap_or("");
-    let (card, _) = ui.allocate_exact_size(Vec2::new(width, 156.0), Sense::hover());
-    ui.painter()
-        .rect_filled(card, 20, theme.scheme.surface_container);
-    let art_rect = Rect::from_min_size(card.left_top() + Vec2::new(DP16, DP16), Vec2::splat(124.0));
-    let texture = art.texture(ui.ctx(), services, artwork);
-    art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 12);
-    let text_x = art_rect.right() + DP16;
-    let text_width = (card.right() - DP16 - text_x).max(40.0);
-    let title = if result.title.trim().is_empty() {
-        "Recognised track"
-    } else {
-        result.title.trim()
-    };
-    crate::widgets::elided(
-        ui.painter(),
-        Pos2::new(text_x, card.top() + DP16),
-        title,
-        bold_font(TITLE_LARGE),
-        theme.scheme.on_surface,
-        text_width,
-    );
-    crate::widgets::elided(
-        ui.painter(),
-        Pos2::new(text_x, card.top() + 46.0),
-        &recognition_subtitle(result),
-        regular_font(14.0),
-        theme.scheme.on_surface_variant,
-        text_width,
-    );
-    let meta = recognition_meta(result);
-    if !meta.is_empty() {
-        crate::widgets::elided(
-            ui.painter(),
-            Pos2::new(text_x, card.top() + 68.0),
-            &meta,
-            regular_font(12.0),
-            theme.scheme.on_surface_variant,
-            text_width,
-        );
-    }
-    let badge = Rect::from_min_size(Pos2::new(text_x, card.top() + 96.0), Vec2::new(102.0, 24.0));
-    ui.painter()
-        .rect_filled(badge, 12, theme.scheme.secondary_container);
-    ui.painter().text(
-        badge.center(),
-        Align2::CENTER_CENTER,
-        "Shazam match",
-        medium_font(11.0),
-        theme.scheme.on_secondary_container,
-    );
-    ui.painter().text(
-        Pos2::new(text_x, card.top() + 126.0),
-        Align2::LEFT_TOP,
-        recognition_timing_text(matched.sample_ms, matched.elapsed_ms),
-        regular_font(11.0),
-        theme.scheme.on_surface_variant,
-    );
-
+    card(theme).show(ui, |ui| {
+        ui.horizontal_top(|ui| {
+            let (art_rect, _) = ui.allocate_exact_size(Vec2::splat(124.0), Sense::hover());
+            let texture = art.texture(ui.ctx(), services, artwork);
+            art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 0);
+            ui.painter()
+                .rect_stroke(art_rect, 0, theme.hairline(), StrokeKind::Inside);
+            ui.add_space(DP16);
+            ui.vertical(|ui| {
+                caps(ui, theme, "Shazam match");
+                ui.add_space(DP4);
+                let title = if result.title.trim().is_empty() {
+                    "Recognised track"
+                } else {
+                    result.title.trim()
+                };
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(title)
+                            .font(bold_font(20.0))
+                            .color(theme.scheme.on_surface),
+                    )
+                    .truncate(),
+                );
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(recognition_subtitle(result))
+                            .font(regular_font(14.0))
+                            .color(theme.scheme.on_surface_variant),
+                    )
+                    .truncate(),
+                );
+                let meta = recognition_meta(result);
+                if !meta.is_empty() {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(meta)
+                                .font(regular_font(12.0))
+                                .color(theme.scheme.on_surface_variant),
+                        )
+                        .truncate(),
+                    );
+                }
+                ui.add_space(DP4);
+                ui.label(
+                    RichText::new(recognition_timing_text(
+                        matched.sample_ms,
+                        matched.elapsed_ms,
+                    ))
+                    .font(font_label(11.0))
+                    .color(theme.scheme.on_surface_variant),
+                );
+            });
+        });
+    });
     ui.add_space(DP16);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = DP8;
         let query = recognition_search_query(result);
-        if filled_button(ui, theme, Some("play_arrow"), "Play").clicked() {
+        if filled_button(ui, theme, None, "Play").clicked() {
             intents.push(Intent::RecognitionPlay {
                 query: query.clone(),
             });
@@ -299,51 +263,31 @@ fn success(
     } else {
         "Confidence is not included in the Shazam response.".to_string()
     };
-    ui.label(
-        egui::RichText::new(detail)
-            .font(regular_font(11.0))
-            .color(theme.scheme.on_surface_variant),
-    );
+    note(ui, theme, &detail);
 }
 
 fn error(ui: &mut Ui, theme: &Theme, message: &str, intents: &mut Vec<Intent>) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 180.0), Sense::hover());
-    ui.painter()
-        .rect_filled(rect, 20, theme.scheme.error_container);
-    paint_icon(
-        ui.painter(),
-        Pos2::new(rect.center().x, rect.top() + 40.0),
-        "error",
-        32.0,
-        theme.scheme.on_error_container,
-    );
-    ui.painter().text(
-        Pos2::new(rect.center().x, rect.top() + 76.0),
-        Align2::CENTER_TOP,
-        "Recognition failed",
-        bold_font(TITLE_MEDIUM),
-        theme.scheme.on_error_container,
-    );
-    let message_rect = Rect::from_min_max(
-        Pos2::new(rect.left() + DP16, rect.top() + 96.0),
-        Pos2::new(rect.right() - DP16, rect.bottom() - DP8),
-    );
-    ui.put(
-        message_rect,
-        egui::Label::new(
-            egui::RichText::new(message)
-                .font(regular_font(13.0))
-                .color(theme.scheme.on_error_container),
-        )
-        .wrap(),
-    );
-    ui.add_space(DP16);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = DP8;
-        if filled_button(ui, theme, Some("refresh"), "Try again").clicked() {
-            intents.push(Intent::StartRecognition);
-        }
-    });
+    egui::Frame::new()
+        .stroke(theme.hairline())
+        .corner_radius(SHAPE_LARGE)
+        .inner_margin(egui::Margin::same(DP16 as i8))
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new("RECOGNITION FAILED")
+                    .font(font_label(11.0))
+                    .color(theme.scheme.error),
+            );
+            ui.add_space(DP8);
+            ui.label(
+                RichText::new(message)
+                    .font(regular_font(13.0))
+                    .color(theme.scheme.on_surface_variant),
+            );
+            ui.add_space(DP16);
+            if filled_button(ui, theme, None, "Try again").clicked() {
+                intents.push(Intent::StartRecognition);
+            }
+        });
 }
 
 /// Deterministic fixture used by `--demo recognize-success`.

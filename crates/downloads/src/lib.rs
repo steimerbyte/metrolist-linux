@@ -1,19 +1,16 @@
 //! `ml-downloads` — offline download manager.
 //!
-//! One directory, one `manifest.json`, one bounded worker pool:
+//! One directory, one `manifest.json`, one bounded worker pool. The byte source
+//! ([`AudioSource`]) is injected by the composition root, so this crate imports
+//! no module crate:
 //!
 //! ```no_run
 //! # fn main() -> ml_core::MlResult<()> {
-//! use ml_downloads::{DownloadConfig, DownloadManager};
+//! use ml_downloads::DownloadConfig;
 //!
-//! let manager = DownloadManager::new(DownloadConfig::new("/music/Metrolist"))?;
-//! let events = manager.events();
-//! # let songs: &[ml_core::Song] = &[];
-//! let _ids = manager.enqueue(songs);
-//! for event in events.try_iter() {
-//!     println!("{event:?}");
-//! }
-//! manager.shutdown();
+//! // `ml-ui` injects its InnerTube source via `DownloadManager::with_source`.
+//! let config = DownloadConfig::new("/music/Metrolist");
+//! # let _ = config;
 //! # Ok(())
 //! # }
 //! ```

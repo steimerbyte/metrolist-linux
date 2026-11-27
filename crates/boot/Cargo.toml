@@ -1,0 +1,13 @@
+[package]
+name = "ml-boot"
+description = "Boot registry and start-up timeline (build-time generated module list)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "boot-list"
+path = "src/bin/boot-list.rs"

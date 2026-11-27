@@ -3,7 +3,7 @@
 //! Runs only with `ML_DOWNLOAD_LIVE=1` (it downloads several megabytes):
 //!
 //! ```text
-//! ML_DOWNLOAD_LIVE=1 cargo test -p ml-downloads --test live -- --nocapture
+//! ML_DOWNLOAD_LIVE=1 cargo test -p ml-ui --test downloads_live -- --nocapture
 //! ML_DOWNLOAD_LIVE_VIDEO=<id>    override the default video
 //! ML_DOWNLOAD_LIVE_QUALITY=low   `low` or `high` (default `high`)
 //! ```
@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use ml_core::{AudioQuality, Song};
 use ml_downloads::{DownloadConfig, DownloadEvent, DownloadManager, DownloadState};
+use ml_ui::audio_source::InnerTubeAudioSource;
 
 const DEFAULT_VIDEO: &str = "kJQP7kiw5Fk";
 
@@ -40,12 +41,15 @@ fn downloads_one_real_track() {
     ));
     let _ = std::fs::remove_dir_all(&dir);
 
-    let manager = DownloadManager::new(DownloadConfig {
-        dir: dir.clone(),
-        max_concurrent: 1,
-        quality,
-        max_storage_bytes: None,
-    })
+    let manager = DownloadManager::with_source(
+        DownloadConfig {
+            dir: dir.clone(),
+            max_concurrent: 1,
+            quality,
+            max_storage_bytes: None,
+        },
+        Arc::new(InnerTubeAudioSource::default()),
+    )
     .expect("manager starts");
 
     // Title/author come from the player response so the file name is realistic.

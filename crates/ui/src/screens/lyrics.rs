@@ -1,12 +1,13 @@
 //! Lyrics view: offset/romanised display, active line and optional translation.
 
 use eframe::egui::{self, Ui};
-use ml_core::{LyricsDocument, LyricsLine, Song};
+use ml_core::{format_position, LyricsDocument, LyricsLine, Song};
 
-use crate::motion;
 use crate::pure::lyrics_offset_label;
 use crate::state::Load;
-use crate::theme::{medium_font, regular_font, Theme, DP12, DP4, DP8};
+use crate::theme::{
+    font_label, medium_font, regular_font, Theme, DP12, DP8, HEADLINE_SMALL, LABEL_SMALL,
+};
 use crate::widgets::{chip, empty_state, outlined_button};
 
 use super::{error_block, measured_column, Intent};
@@ -45,7 +46,7 @@ pub fn show(
     ui.add_space(DP8);
     ui.label(
         egui::RichText::new(&song.title)
-            .font(medium_font(18.0))
+            .font(medium_font(HEADLINE_SMALL))
             .color(theme.scheme.on_surface),
     );
     ui.label(
@@ -127,61 +128,57 @@ pub fn show(
                 });
                 for (index, line) in document.lines.iter().enumerate() {
                     let is_active = active == Some(index);
-                    let active_t = motion::t(
-                        ui,
-                        ui.scope_id().with(("lyric_line", index)),
-                        is_active,
-                        motion::ENTER,
-                    );
-                    // Text colour and weight swap at the midpoint: animating
-                    // them would re-lay out a galley every frame.
-                    let strong = active_t >= 0.5;
-                    let color = if line.background {
-                        if strong {
-                            theme.scheme.secondary
-                        } else {
-                            theme.scheme.outline
-                        }
-                    } else if strong {
-                        theme.scheme.primary
-                    } else {
+                    let current = is_active && previous_active != active_now;
+                    let color = if is_active && !line.background {
                         theme.scheme.on_surface
+                    } else {
+                        theme.scheme.on_surface_variant
                     };
-                    let fill = egui::Color32::TRANSPARENT
-                        .lerp_to_gamma(theme.scheme.surface_container_high, active_t);
-                    let response = egui::Frame::new()
-                        .fill(fill)
-                        .corner_radius(8)
-                        .inner_margin(egui::Margin::symmetric(DP8 as i8, DP4 as i8))
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            let mut text = egui::RichText::new(&line.text)
-                                .font(regular_font(15.0))
-                                .color(color);
-                            if strong {
-                                text = text.strong();
-                            }
-                            ui.add(egui::Label::new(text).wrap());
-                            if options.show_translation {
-                                if let Some(translated) = document
-                                    .translated
-                                    .as_ref()
-                                    .and_then(|lines| lines.get(index))
-                                    .filter(|line| !line.text.trim().is_empty())
-                                {
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(&translated.text)
-                                                .font(regular_font(13.0))
-                                                .color(theme.scheme.on_surface_variant),
-                                        )
-                                        .wrap(),
-                                    );
+                    let font = if is_active && !line.background {
+                        medium_font(15.0)
+                    } else {
+                        regular_font(15.0)
+                    };
+                    let response = ui
+                        .horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = DP12;
+                            ui.add_sized(
+                                [44.0, 14.0],
+                                egui::Label::new(
+                                    egui::RichText::new(format_position(line.start_ms))
+                                        .font(font_label(LABEL_SMALL))
+                                        .color(theme.scheme.on_surface_variant),
+                                )
+                                .wrap_mode(egui::TextWrapMode::Extend),
+                            );
+                            ui.vertical(|ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&line.text).font(font).color(color),
+                                    )
+                                    .wrap(),
+                                );
+                                if options.show_translation {
+                                    if let Some(translated) = document
+                                        .translated
+                                        .as_ref()
+                                        .and_then(|lines| lines.get(index))
+                                        .filter(|line| !line.text.trim().is_empty())
+                                    {
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(&translated.text)
+                                                    .font(regular_font(13.0))
+                                                    .color(theme.scheme.on_surface_variant),
+                                            )
+                                            .wrap(),
+                                        );
+                                    }
                                 }
-                            }
+                            });
                         })
                         .response;
-                    if is_active && previous_active != active_now {
+                    if current {
                         ui.scroll_to_rect(response.rect, Some(egui::Align::Center));
                     }
                     ui.add_space(DP8);
@@ -206,8 +203,8 @@ fn toolbar(
         if has_lines && options.translation_available {
             if options.translation.loading {
                 ui.label(
-                    egui::RichText::new("Translating…")
-                        .font(regular_font(12.0))
+                    egui::RichText::new("TRANSLATING…")
+                        .font(font_label(LABEL_SMALL))
                         .color(theme.scheme.on_surface_variant),
                 );
             } else if outlined_button(ui, theme, "Translate").clicked() {
@@ -219,9 +216,11 @@ fn toolbar(
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = DP8;
             ui.label(
-                egui::RichText::new(format!("Offset {}", lyrics_offset_label(options.offset_ms)))
-                    .font(regular_font(12.0))
-                    .color(theme.scheme.on_surface_variant),
+                egui::RichText::new(
+                    format!("OFFSET {}", lyrics_offset_label(options.offset_ms)).to_uppercase(),
+                )
+                .font(font_label(LABEL_SMALL))
+                .color(theme.scheme.on_surface_variant),
             );
             if outlined_button(ui, theme, "-0.5 s").clicked() {
                 intents.push(Intent::AdjustLyricsOffset(-500));

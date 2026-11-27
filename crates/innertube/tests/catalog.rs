@@ -2,7 +2,7 @@
 //! radio queue growth. Fixtures are trimmed WEB_REMIX responses captured
 //! 2026-11-02 (`gl=DE`, `hl=en`, unauthenticated).
 
-use ml_core::{AlbumRef, Artist, QueuePage, SectionKind, Song, YtItem};
+use ml_core::{AlbumRef, Artist, HomePage, HomeView, QueuePage, SectionKind, Song, YtItem};
 use ml_innertube::pages;
 use ml_innertube::{ClientConfig, InnertubeClient};
 use serde_json::{json, Value};
@@ -10,6 +10,34 @@ use serde_json::{json, Value};
 fn fixture(name: &str) -> Value {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
     serde_json::from_str(&std::fs::read_to_string(path).expect("fixture")).expect("json")
+}
+
+#[test]
+fn explore_home_keeps_only_new_releases_and_trending() {
+    // Trimmed `FEmusic_explore`, hl=de, captured 2026-11-27.
+    let page = fixture("explore_home.json");
+    let feed = pages::home::filter(pages::home::from_browse(&page), &HomeView::default());
+    let titles: Vec<&str> = feed.sections.iter().map(|s| s.title.as_str()).collect();
+    assert_eq!(titles, ["Neue Alben und Singles", "Angesagt"]);
+    // An empty selection keeps every shelf except the item-less chip grid.
+    let all = pages::home::filter(
+        pages::home::from_browse(&page),
+        &HomeView {
+            page: HomePage::Explore,
+            sections: Vec::new(),
+        },
+    );
+    assert!(all.sections.len() > feed.sections.len());
+    assert!(all.sections.len() >= 3);
+    // A shelf id nobody matches leaves the feed empty.
+    let none = pages::home::filter(
+        pages::home::from_browse(&page),
+        &HomeView {
+            page: HomePage::Explore,
+            sections: vec!["FEmusic_charts".to_string()],
+        },
+    );
+    assert!(none.sections.is_empty());
 }
 
 fn song(id: &str) -> Song {

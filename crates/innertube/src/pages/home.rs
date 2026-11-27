@@ -1,6 +1,7 @@
-//! `browse FEmusic_home` → [`HomeFeed`].
+//! `browse FEmusic_explore` / `FEmusic_home` → [`HomeFeed`], narrowed by
+//! [`ml_core::HomeView`]; chips and podcast shelves come from `FEmusic_home`.
 
-use ml_core::{HomeFeed, HomeSection};
+use ml_core::{HomeFeed, HomeSection, HomeView};
 use serde_json::Value;
 
 use crate::parse::renderers::{carousel_items, grid_items, shelf_items};
@@ -23,6 +24,7 @@ fn carousel_section(carousel: &Value) -> Option<HomeSection> {
     Some(HomeSection {
         kind: super::section_kind(&title),
         title,
+        id: header_browse_id(carousel).map(str::to_string),
         items,
         continuation: continuation(carousel.get("continuations")),
     })
@@ -41,6 +43,7 @@ fn grid_section(grid: &Value) -> Option<HomeSection> {
     Some(HomeSection {
         kind: super::section_kind(&title),
         title,
+        id: None,
         items,
         continuation: continuation(grid.get("continuations")),
     })
@@ -59,6 +62,7 @@ fn shelf_section(shelf: &Value) -> Option<HomeSection> {
     Some(HomeSection {
         kind: super::section_kind(&title),
         title,
+        id: None,
         items,
         continuation: continuation(shelf.get("continuations")),
     })
@@ -138,6 +142,32 @@ pub fn from_browse(value: &Value) -> HomeFeed {
         sections,
         continuation: continuation(list.get("continuations")),
     }
+}
+
+/// Browse id a carousel header links to: the "Mehr" button first, then the title.
+fn header_browse_id(carousel: &Value) -> Option<&str> {
+    let header = carousel
+        .get("header")?
+        .get("musicCarouselShelfBasicHeaderRenderer")?;
+    header
+        .pointer("/moreContentButton/buttonRenderer/navigationEndpoint/browseEndpoint/browseId")
+        .or_else(|| header.pointer("/title/runs/0/navigationEndpoint/browseEndpoint/browseId"))
+        .and_then(Value::as_str)
+}
+
+/// Parse a feed page and keep the shelves `view` asks for: an empty list keeps
+/// every shelf, a non-empty one keeps shelves whose browse id matches a prefix.
+/// Shelves without an id (grids, `FEmusic_home` rows) always survive.
+pub fn filter(mut feed: HomeFeed, view: &HomeView) -> HomeFeed {
+    if !view.sections.is_empty() {
+        feed.sections.retain(|section| {
+            section
+                .id
+                .as_deref()
+                .is_none_or(|id| view.sections.iter().any(|prefix| id.starts_with(prefix)))
+        });
+    }
+    feed
 }
 
 /// Parse `browse {continuation}` for more home shelves.

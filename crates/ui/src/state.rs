@@ -580,6 +580,14 @@ pub fn merge_sections(sections: &mut Vec<HomeSection>, extra: Vec<HomeSection>) 
     }
 }
 
+/// `(title, browse id)` of every shelf carrying a header link.
+pub fn home_sections(feed: &HomeFeed) -> Vec<(String, String)> {
+    feed.sections
+        .iter()
+        .filter_map(|section| section.id.clone().map(|id| (section.title.clone(), id)))
+        .collect()
+}
+
 pub fn merge_feed(home: &mut HomeFeed, extra: HomeFeed) {
     merge_sections(&mut home.sections, extra.sections);
     home.continuation = extra.continuation;

@@ -6,7 +6,7 @@ Frozen 2026-11-02. Proof: `candidate.rs`, scaffold: `original.rs`.
 
 | source | sha256 |
 |---|---|
-| crates/core/src/settings.rs | e3a390e746ab8fb8da61d1982b57d5a02dc3ac4e8974a6390275ea9e129bec6b |
+| crates/core/src/settings.rs | a574eb05c1ca2dafd33f1eb4fe04b7556da987d5a091358bfbfd92d58a44b6a9 |
 
 ## Toolchain
 
@@ -32,3 +32,12 @@ above. `seed_rgb` (L154–L160) and `Settings::default().seed_color`
 struct, so no obligation changed and no proof text changed. Serde
 fill-from-defaults (the new field is covered by the struct's `#[serde(default)]`)
 remains outside the subset, as does the `f32` settings block.
+
+## Re-freeze 2026-11-27 (home view)
+
+`crates/core/src/settings.rs` gained `HomePage`, `HomeView` and
+`Settings.home` (new hash above); the settings screen offers the page and its
+shelves. `seed_rgb` and `Settings::default().seed_color` (`0x00ED_5564`) are
+byte-identical, and this pair transcribes no `Settings` struct, so no
+obligation changed and no proof text changed. The new field is covered by the
+struct's `#[serde(default)]`, which stays outside the subset.

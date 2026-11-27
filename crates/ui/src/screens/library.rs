@@ -10,7 +10,8 @@ use crate::routes::Route;
 use crate::services::Services;
 use crate::state::{DownloadsState, LibTab, LibraryState};
 use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP48, DP8, GRID_GAP,
+    font_label, medium_font, regular_font, Theme, BODY_LARGE, BODY_MEDIUM, DP12, DP16, DP24, DP4,
+    DP48, DP8, GRID_GAP, LABEL_SMALL, SHAPE_LARGE, TITLE_MEDIUM,
 };
 use crate::widgets::{
     album_card, chip, empty_state, filled_button, icon_button, paint_icon, section_header,
@@ -47,7 +48,7 @@ pub fn show(
     ui.add_space(DP12);
 
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.spacing_mut().item_spacing.x = DP8;
         for tab in LibTab::ALL {
             let selected = state.tab == tab;
             let response = chip(ui, theme, tab.label(), selected);
@@ -219,11 +220,13 @@ pub fn show(
         }
         LibTab::Playlists => {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.spacing_mut().item_spacing.x = DP8;
                 let edit = egui::TextEdit::singleline(&mut state.new_playlist)
-                    .hint_text("New playlist name")
+                    .hint_text(
+                        egui::RichText::new("NEW PLAYLIST NAME").font(font_label(LABEL_SMALL)),
+                    )
                     .desired_width((width - 140.0).max(120.0))
-                    .font(regular_font(16.0));
+                    .font(regular_font(BODY_LARGE));
                 ui.add(edit);
                 if filled_button(ui, theme, Some("add"), "Create").clicked()
                     && !state.new_playlist.trim().is_empty()
@@ -310,14 +313,14 @@ pub fn show(
             ui.set_width(320.0);
             ui.label(
                 egui::RichText::new(format!("Add “{}” to", song.title))
-                    .font(medium_font(16.0))
+                    .font(medium_font(TITLE_MEDIUM))
                     .color(theme.scheme.on_surface),
             );
             ui.add_space(DP8);
             if playlists.is_empty() {
                 ui.label(
                     egui::RichText::new("Create a playlist in the Playlists tab first.")
-                        .font(regular_font(13.0))
+                        .font(regular_font(BODY_MEDIUM))
                         .color(theme.scheme.on_surface_variant),
                 );
             }
@@ -326,7 +329,7 @@ pub fn show(
                     [320.0, 40.0],
                     egui::Button::new(
                         egui::RichText::new(&playlist.name)
-                            .font(regular_font(15.0))
+                            .font(regular_font(BODY_LARGE))
                             .color(theme.scheme.on_surface),
                     )
                     .frame(false),
@@ -354,43 +357,40 @@ pub fn show(
 
 fn liked_tile(ui: &mut Ui, theme: &Theme, count: Option<usize>, width: f32) -> bool {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 64.0), egui::Sense::click());
-    let (hover_t, press_t) = motion::interaction(ui, &response);
-    if hover_t > 0.0 || press_t > 0.0 {
-        ui.painter().rect_filled(
-            rect,
-            10,
-            motion::state_layer_at(theme.bg(), hover_t, press_t),
-        );
-    }
-    let icon_rect = egui::Rect::from_center_size(
-        egui::Pos2::new(rect.left() + 28.0, rect.center().y),
-        Vec2::splat(40.0),
+    let (hover_t, _) = motion::interaction(ui, &response);
+    let fill = theme
+        .card()
+        .lerp_to_gamma(theme.scheme.surface_container_high, hover_t);
+    ui.painter().rect_filled(rect, SHAPE_LARGE, fill);
+    ui.painter().rect_stroke(
+        rect,
+        SHAPE_LARGE,
+        theme.hairline(),
+        egui::StrokeKind::Inside,
     );
-    ui.painter()
-        .circle_filled(icon_rect.center(), 20.0, theme.scheme.primary_container);
     paint_icon(
         ui.painter(),
-        icon_rect.center(),
+        egui::Pos2::new(rect.left() + DP24 + DP4, rect.center().y),
         "favorite",
         22.0,
-        theme.scheme.on_primary_container,
+        theme.scheme.on_surface_variant,
     );
     crate::widgets::text(
         ui.painter(),
-        egui::Pos2::new(rect.left() + 60.0, rect.top() + 12.0),
+        egui::Pos2::new(rect.left() + DP48 + DP12, rect.top() + DP12),
         "Liked songs",
-        medium_font(16.0),
+        medium_font(TITLE_MEDIUM),
         theme.scheme.on_surface,
     );
     let subtitle = match count {
-        Some(count) => format!("{} {}", count, if count == 1 { "song" } else { "songs" }),
-        None => "Loading…".to_string(),
+        Some(count) => format!("{count} {}", if count == 1 { "SONG" } else { "SONGS" }),
+        None => "LOADING…".to_string(),
     };
     crate::widgets::text(
         ui.painter(),
-        egui::Pos2::new(rect.left() + 60.0, rect.top() + 34.0),
+        egui::Pos2::new(rect.left() + DP48 + DP12, rect.top() + DP12 + 22.0),
         &subtitle,
-        regular_font(12.0),
+        font_label(LABEL_SMALL),
         theme.scheme.on_surface_variant,
     );
     response.clicked()
@@ -514,19 +514,22 @@ fn stats_entry(ui: &mut Ui, theme: &Theme, width: f32) -> bool {
         motion::HOVER,
     );
     let fill = theme
-        .scheme
-        .surface_container
+        .card()
         .lerp_to_gamma(theme.scheme.surface_container_high, hover_t);
-    ui.painter().rect_filled(rect, 12, fill);
-    let icon_center = rect.left_center() + Vec2::new(DP48 / 2.0, 0.0);
-    ui.painter()
-        .circle_filled(icon_center, 18.0, theme.scheme.secondary_container);
+    ui.painter().rect_filled(rect, SHAPE_LARGE, fill);
+    ui.painter().rect_stroke(
+        rect,
+        SHAPE_LARGE,
+        theme.hairline(),
+        egui::StrokeKind::Inside,
+    );
+    let icon_center = rect.left_center() + Vec2::new(DP24, 0.0);
     paint_icon(
         ui.painter(),
         icon_center,
         "bar_chart",
         20.0,
-        theme.scheme.on_secondary_container,
+        theme.scheme.on_surface_variant,
     );
     let text_x = rect.left() + DP48 + DP8;
     let text_width = (rect.right() - DP24 - DP8 - text_x).max(40.0);
@@ -534,15 +537,15 @@ fn stats_entry(ui: &mut Ui, theme: &Theme, width: f32) -> bool {
         ui.painter(),
         egui::pos2(text_x, rect.top() + DP16),
         "Your stats",
-        bold_font(15.0),
+        medium_font(TITLE_MEDIUM),
         theme.scheme.on_surface,
         text_width,
     );
     crate::widgets::elided(
         ui.painter(),
         egui::pos2(text_x, rect.top() + DP16 + 21.0),
-        "Listening totals, top songs & Wrapped",
-        regular_font(11.0),
+        "LISTENING TOTALS, TOP SONGS & WRAPPED",
+        font_label(LABEL_SMALL),
         theme.scheme.on_surface_variant,
         text_width,
     );

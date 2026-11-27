@@ -9,7 +9,7 @@ Proof: `candidate.rs`, scaffold: `original.rs`.
 | source | sha256 |
 |---|---|
 | crates/innertube/src/stream.rs | 00fe4edd0fa6d096990bc45cbbfe9cf06c240554e0cdf0c0b4bb6fc986460b00 |
-| crates/innertube/src/context.rs | 020a373bae8902d688151b1b9406d9b9bbb4ada3c459b056ac1c8333742d7302 |
+| crates/innertube/src/context.rs | e9317e5c525401f1087b3ea15577382b5d5405a1b658aad831b840c5f6cd01e2 |
 | crates/innertube/src/player.rs | becc2a53ab254d6b19a6040a6483ee80d1b9c7ddf97e4932124805db4998b82a |
 
 ## Toolchain
@@ -95,3 +95,13 @@ unchanged, so `chunk_ranges`, `expiry`, `validate_content_range`,
 No proof text changed. The hash-order fix is classified OUT-OF-SUBSET and
 test-pinned (see the model-deviation bullet above); it is not claimed as
 verified anywhere.
+
+## Re-freeze 2026-11-27 (visitor_data)
+
+`crates/innertube/src/context.rs`: `prepare` gained a `jar_visitor` argument and
+the chain `PoToken -> config.visitor_data -> jar (login only) -> ytcfg scrape`
+(login never borrows the guest scrape); the module tests grew accordingly.
+`parse_visitor_data` and `cookie_value` are byte-identical; both are outside
+the subset and are not modelled (see the deviation above), so the hash-only
+re-freeze claims nothing about them. `stream.rs`/`player.rs` did not change and
+no proven obligation changed.

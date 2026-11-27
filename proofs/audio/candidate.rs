@@ -63,14 +63,22 @@ pub fn sleep_window_contains(now_minutes: u32, start_minutes: u32, end_minutes: 
 
 /// `start == end` means the whole day, for every `now`.
 
-pub open spec fn clear_stream_mute_spec(allow_unmute: bool, intended_muted: bool) -> bool {
-    allow_unmute && !intended_muted
+pub open spec fn clear_stream_mute_spec(
+    ao_open: bool,
+    allow_unmute: bool,
+    intended_muted: bool,
+) -> bool {
+    ao_open && allow_unmute && !intended_muted
 }
 
-pub fn should_clear_stream_mute(allow_unmute: bool, intended_muted: bool) -> (r: bool)
-    ensures r == clear_stream_mute_spec(allow_unmute, intended_muted),
+pub fn should_clear_stream_mute(
+    ao_open: bool,
+    allow_unmute: bool,
+    intended_muted: bool,
+) -> (r: bool)
+    ensures r == clear_stream_mute_spec(ao_open, allow_unmute, intended_muted),
 {
-    allow_unmute && !intended_muted
+    ao_open && allow_unmute && !intended_muted
 }
 
 pub proof fn lemma_sleep_clamped_to_a_day(minutes: u32)
@@ -141,20 +149,29 @@ pub proof fn lemma_ordered_step(a: u32, b: u32, start_minutes: u32, end_minutes:
 }
 
 // ===== should_clear_stream_mute =====
-// engine.rs stream-level mute policy: test/probe engines never clear the
-// server's mute, and a stream the user muted is never unmuted.
+// engine.rs stream-level mute policy: `ao-mute` only exists while an output is
+// open, test/probe engines never clear the server's mute, and a stream the
+// user muted is never unmuted.
 
 pub proof fn lemma_stream_mute_table()
     ensures
-        clear_stream_mute_spec(true, false),
-        !clear_stream_mute_spec(true, true),
-        !clear_stream_mute_spec(false, false),
-        !clear_stream_mute_spec(false, true),
+        clear_stream_mute_spec(true, true, false),
+        !clear_stream_mute_spec(true, true, true),
+        !clear_stream_mute_spec(true, false, false),
+        !clear_stream_mute_spec(true, false, true),
+        !clear_stream_mute_spec(false, true, false),
 {
 }
 
-pub proof fn lemma_muted_stays_muted(allow_unmute: bool, intended_muted: bool)
-    ensures intended_muted || !allow_unmute ==> !clear_stream_mute_spec(allow_unmute, intended_muted),
+pub proof fn lemma_muted_stays_muted(ao_open: bool, allow_unmute: bool, intended_muted: bool)
+    ensures
+        intended_muted || !allow_unmute
+            ==> !clear_stream_mute_spec(ao_open, allow_unmute, intended_muted),
+{
+}
+
+pub proof fn lemma_no_output_never_unmutes(allow_unmute: bool, intended_muted: bool)
+    ensures !clear_stream_mute_spec(false, allow_unmute, intended_muted),
 {
 }
 

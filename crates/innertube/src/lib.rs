@@ -14,7 +14,10 @@ pub mod pages;
 pub mod parse;
 pub mod player;
 pub mod pot;
+pub mod shim;
 pub mod stream;
+
+pub use shim::StreamShim;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -24,8 +27,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ml_core::{
-    Album, AlbumPage, ArtistPage, AudioQuality, Episode, HomeFeed, MediaInfo, MlError, MlResult,
-    PlaylistPage, ProxyConfig, SearchPage, StreamInfo,
+    Album, AlbumPage, ArtistPage, AudioQuality, Episode, HomeFeed, HomePage, MediaInfo, MlError,
+    MlResult, PlaylistPage, ProxyConfig, SearchPage, StreamInfo,
 };
 use serde_json::{json, Value};
 
@@ -112,7 +115,8 @@ const MOOD_CATEGORY_BROWSE_ID: &str = "FEmusic_moods_and_genres_category";
 #[derive(Clone)]
 pub struct InnertubeClient {
     config: ClientConfig,
-    http: reqwest::Client,
+    /// Shared by requests and the loopback stream shim's ranged fetches.
+    pub(crate) http: reqwest::Client,
     versions: Arc<Mutex<ClientVersions>>,
     streams: Arc<StreamCache>,
     /// Album context per continuation token, so paginated rows keep the album
@@ -229,15 +233,24 @@ impl InnertubeClient {
             let mut config = self.config.clone();
             config.cookie = self.cookie_header();
             let request_versions = crate::auth::request_versions(&versions, set_login);
-            let prepared = context::prepare(
-                &config,
-                &request_versions,
-                kind,
-                endpoint,
-                body.clone(),
-                set_login,
-                integrity,
-            );
+            // The live jar owns the session visitor; the guard stays out of the
+            // `.await` below so the future remains `Send`.
+            let prepared = {
+                let cookies = self
+                    .cookies
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                context::prepare(
+                    &config,
+                    &request_versions,
+                    kind,
+                    endpoint,
+                    body.clone(),
+                    set_login,
+                    integrity,
+                    cookies.visitor_data(),
+                )
+            };
             let response = self.send(&prepared).await?;
             self.absorb_response_cookies(
                 response.headers(),
@@ -294,15 +307,21 @@ impl InnertubeClient {
 
     // ------------------------------------------------------------------- browse
 
-    pub async fn home(&self) -> MlResult<HomeFeed> {
+    /// Unfiltered feed of the chosen home page; the caller narrows the shelves
+    /// so the settings can keep offering every shelf it hides.
+    pub async fn home(&self, page: HomePage) -> MlResult<HomeFeed> {
+        let (browse_id, params) = match page {
+            HomePage::Home => ("FEmusic_home", None),
+            HomePage::Explore => ("FEmusic_explore", None),
+            HomePage::Charts => ("FEmusic_charts", Some(CHART_PARAMS)),
+            HomePage::NewReleases => ("FEmusic_new_releases", None),
+        };
+        let mut body = json!({ "browseId": browse_id });
+        if let Some(params) = params {
+            body["params"] = Value::String(params.to_string());
+        }
         let response = self
-            .post(
-                ClientKind::WebRemix,
-                "browse",
-                json!({ "browseId": "FEmusic_home" }),
-                false,
-                None,
-            )
+            .post(ClientKind::WebRemix, "browse", body, true, None)
             .await?;
         Ok(pages::home::from_browse(&response))
     }
@@ -313,7 +332,7 @@ impl InnertubeClient {
                 ClientKind::WebRemix,
                 "browse",
                 json!({ "continuation": token }),
-                false,
+                true,
                 None,
             )
             .await?;

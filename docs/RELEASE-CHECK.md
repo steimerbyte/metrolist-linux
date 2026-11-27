@@ -211,8 +211,9 @@ fixed during the freeze:
 
 ## Assets and packaging
 
-- Embedded at compile time: `crates/ui/assets/fonts/{Roboto-Regular,Roboto-Medium,
-  Roboto-Bold,MaterialSymbolsRounded}.ttf` (`theme/fonts.rs`, `include_bytes!`).
+- Embedded at compile time: `crates/ui/assets/fonts/{SpaceGrotesk-Regular,
+  SpaceGrotesk-Medium,Doto-Bold,SpaceMono-Regular,MaterialSymbolsRounded}.ttf`
+  (`theme/fonts.rs`, `include_bytes!`).
 - Shipped: `assets/fonts/` (fonts + licence texts), `assets/i18n/` (`en.json`
   with 1110 keys + 55 locale overlays + `INDEX.md`), and
   `assets/icons/metrolist-desktop-{128,256,512}.png`.
@@ -224,11 +225,11 @@ fixed during the freeze:
   The script's structural checks (binary, bundled mpv, `assets/i18n/en.json`,
   mpv licences) match that layout.
 
-Notes (reported, not blocking): the root `assets/fonts/Roboto-*.ttf` copies
-differ byte-wise from the embedded `crates/ui/assets/fonts` copies
-(`MaterialSymbolsRounded.ttf` is identical); fonts are embedded, so the packaged
-copies are unused. No code currently reads `assets/i18n/*.json` — translations
-ship but the UI is English.
+Notes (reported, not blocking): `assets/fonts/` and `crates/ui/assets/fonts/`
+hold byte-identical font files (verified with `cmp`); only `SOURCES.md`
+differs (the root copy documents the extra `Apache-2.0-MaterialSymbols.txt`
+licence). Fonts are embedded, so the packaged copies are unused. No code
+currently reads `assets/i18n/*.json` — translations ship but the UI is English.
 
 ## Secrets
 

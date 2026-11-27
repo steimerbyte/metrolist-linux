@@ -197,13 +197,10 @@ fn build_runtime(workers: usize) -> MlResult<Runtime> {
 
 impl DownloadManager {
     /// Create the directory, load the manifest and start the worker pool.
-    /// Tracks come from a default [`ml_innertube::InnertubeClient`].
-    pub fn new(config: DownloadConfig) -> MlResult<Self> {
-        Self::with_source(config, Arc::new(ml_innertube::InnertubeClient::default()))
-    }
-
-    /// [`DownloadManager::new`] with an injected byte source (tests, or a caller
-    /// that already owns a configured InnerTube client).
+    ///
+    /// The byte source is injected by the composition root
+    /// (`ml-ui::audio_source::InnerTubeAudioSource` in the app); tests pass a
+    /// fake. See [`DownloadManager::with_source`].
     pub fn with_source(config: DownloadConfig, source: Arc<dyn AudioSource>) -> MlResult<Self> {
         fs::create_dir_all(&config.dir).map_err(MlError::from)?;
         // No transfer can be live here, so every `dl_*.part` is a crash leftover.

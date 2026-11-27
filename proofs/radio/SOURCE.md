@@ -4,9 +4,9 @@
 
 | file | sha256 (at freeze) |
 |------|--------------------|
-| crates/ui/src/services.rs | 1434dc75dd41e13d276b596839716aa3bf2202198f86eebcc7a1df1a3402a3f5 |
-| crates/ui/src/app.rs | 4a5fbf4f5337a2b53d070dc9ae5639a5410abf1ef369bc6d58c35e6501f55244 |
-| crates/innertube/src/lib.rs | bfa89ea531da62a31afc59bee4978d51606f9d372c72a3c325a21679650a8890 |
+| crates/ui/src/services.rs | bb2e7c16136a3f9c0e87af06f75c8b85e2009cbed5197dcfd797aeaed5570df8 |
+| crates/ui/src/app.rs | f7031bf51cff7268c0f821452df0647fc1bb6896e78866e930673f093fe1e4b4 |
+| crates/innertube/src/lib.rs | 5ce472ec2fec2dc42c766ea4d6849641395e84f384daaa7e6a38338f18aa1123 |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
 bundled Rust `1.99.1-x86_64-unknown-linux-gnu`; workspace pin `1.99.1`.
@@ -181,3 +181,23 @@ in this file. `Intent::PlayAll` is routed through `App::play_intent`, which
 calls `pure::play_starts_radio`; that predicate is proven in `proofs/ui` (this
 area only records the call site). No proof text changed and no new obligation
 is claimed here.
+
+## Re-freeze 2026-11-27 (home view, stream shim, visitor_data)
+
+`crates/innertube/src/lib.rs` gained `home(page)` and the jar visitor in `post`;
+`crates/ui/src/app.rs` gained the unfiltered shelf list, the home filter and the
+settings-home demo; `crates/ui/src/services.rs` gained the `StreamShim` resolver
+wiring, `load_home(view)` and the page switch. The proven items are
+byte-identical: `url_route` (`app.rs` L164), `radio_event`/`radio_fallback`
+(`services.rs` L257/L398), `SearchFilter::params` and `search_body`
+(`lib.rs` L101) sit outside every hunk. No obligation changed, no proof text
+changed. The locator erratum from the v0.1.3 review is corrected here: the
+verbatim `url_route` body lives at L164 in the current file.
+
+## Re-freeze 2026-11-27 (dither demo mode)
+
+`crates/ui/src/app.rs` gained the `DemoMode::Loading` plumbing only: `App::new`
+skips the boot `load_home` for that mode, and `after_frame` reports it ready
+while the feed is still loading. `url_route` and every other proven body are
+byte-identical (the change sits in `App::new` and `after_frame`, not in the
+route layout). No obligation changed, no proof text changed.

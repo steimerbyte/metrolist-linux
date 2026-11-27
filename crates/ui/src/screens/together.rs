@@ -1,14 +1,16 @@
 //! Listen Together lobby, room, users, queue and host controls.
 
-use eframe::egui::{self, Align, Layout, RichText, Ui, Vec2};
+use eframe::egui::{self, Align, Layout, RichText, Stroke, Ui, Vec2};
 use ml_core::{format_position, PlayerSnapshot};
 use ml_together::{
     Role, RoomState, ServerInfo, SessionSnapshot, TrackInfo, UserInfo, DEFAULT_SERVER_URL, SERVERS,
 };
 
 use crate::state::{TogetherPhase, TogetherState};
-use crate::theme::{medium_font, regular_font, Theme, DP12, DP16, DP4, DP8, TITLE_LARGE};
-use crate::widgets::{chip, filled_button, outlined_button, paint_icon, section_header, slider};
+use crate::theme::{
+    font_label, medium_font, regular_font, Theme, DP12, DP16, DP4, DP8, SHAPE_LARGE, TITLE_LARGE,
+};
+use crate::widgets::{chip, divider, filled_button, outlined_button, section_header, slider};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TogetherAction {
@@ -38,7 +40,8 @@ fn server_info(url: &str) -> ServerInfo {
 fn card(ui: &mut Ui, theme: &Theme, add: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
         .fill(theme.scheme.surface_container)
-        .corner_radius(16)
+        .stroke(Stroke::new(1.0, theme.scheme.outline_variant))
+        .corner_radius(SHAPE_LARGE)
         .inner_margin(egui::Margin::same(DP16 as i8))
         .show(ui, add);
 }
@@ -47,6 +50,14 @@ fn label(ui: &mut Ui, theme: &Theme, text: &str) {
     ui.label(
         RichText::new(text)
             .font(regular_font(12.0))
+            .color(theme.scheme.on_surface_variant),
+    );
+}
+
+fn caps(ui: &mut Ui, theme: &Theme, text: &str) {
+    ui.label(
+        RichText::new(text.to_uppercase())
+            .font(font_label(11.0))
             .color(theme.scheme.on_surface_variant),
     );
 }
@@ -65,11 +76,7 @@ fn lobby(ui: &mut Ui, theme: &Theme, state: &mut TogetherState, actions: &mut Ve
     ui.add_space(DP12);
 
     card(ui, theme, |ui| {
-        ui.label(
-            RichText::new("Room server")
-                .font(medium_font(14.0))
-                .color(theme.scheme.on_surface),
-        );
+        caps(ui, theme, "Room server");
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = DP8;
             for server in SERVERS {
@@ -89,11 +96,7 @@ fn lobby(ui: &mut Ui, theme: &Theme, state: &mut TogetherState, actions: &mut Ve
             ),
         );
         ui.add_space(DP12);
-        ui.label(
-            RichText::new("Display name")
-                .font(medium_font(13.0))
-                .color(theme.scheme.on_surface),
-        );
+        caps(ui, theme, "Display name");
         ui.add(
             egui::TextEdit::singleline(&mut state.display_name)
                 .hint_text("Your name in the room")
@@ -130,8 +133,9 @@ fn lobby(ui: &mut Ui, theme: &Theme, state: &mut TogetherState, actions: &mut Ve
     if let Some(error) = state.error.as_deref() {
         ui.add_space(DP12);
         egui::Frame::new()
-            .fill(theme.scheme.error_container)
-            .corner_radius(12)
+            .fill(theme.scheme.surface_container)
+            .stroke(Stroke::new(1.0, theme.scheme.outline_variant))
+            .corner_radius(SHAPE_LARGE)
             .inner_margin(egui::Margin::same(DP12 as i8))
             .show(ui, |ui| {
                 ui.label(
@@ -191,25 +195,16 @@ fn waiting(ui: &mut Ui, theme: &Theme, state: &TogetherState, actions: &mut Vec<
 fn role_note(ui: &mut Ui, theme: &Theme, host: bool) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = DP8;
-        let (label, fill, text) = if host {
-            (
-                "Host",
-                theme.scheme.primary_container,
-                theme.scheme.on_primary_container,
-            )
-        } else {
-            (
-                "Guest",
-                theme.scheme.secondary_container,
-                theme.scheme.on_secondary_container,
-            )
-        };
         egui::Frame::new()
-            .fill(fill)
-            .corner_radius(8)
+            .stroke(Stroke::new(1.0, theme.scheme.outline_variant))
+            .corner_radius(egui::CornerRadius::same(u8::MAX))
             .inner_margin(egui::Margin::symmetric(DP8 as i8, 3))
             .show(ui, |ui| {
-                ui.label(RichText::new(label).font(medium_font(11.0)).color(text));
+                ui.label(
+                    RichText::new(if host { "HOST" } else { "GUEST" })
+                        .font(font_label(11.0))
+                        .color(theme.scheme.on_surface_variant),
+                );
             });
         ui.label(
             RichText::new(if host {
@@ -236,32 +231,20 @@ fn users(ui: &mut Ui, theme: &Theme, state: &TogetherState, room: &RoomState) {
             .unwrap_or('?')
             .to_ascii_uppercase();
         let row_host = user.is_host || user.user_id == room.host_id;
-        ui.painter().circle_filled(
-            rect.left_center() + Vec2::new(18.0, 0.0),
-            16.0,
-            theme.scheme.surface_container_highest,
-        );
+        let center = rect.left_center() + Vec2::new(18.0, 0.0);
+        ui.painter()
+            .circle_filled(center, 16.0, theme.scheme.surface_container_high);
+        ui.painter()
+            .circle_stroke(center, 16.0, Stroke::new(1.0, theme.scheme.outline_variant));
         ui.painter().text(
-            rect.left_center() + Vec2::new(18.0, 0.0),
+            center,
             egui::Align2::CENTER_CENTER,
             initial.to_string(),
             medium_font(13.0),
             theme.scheme.on_surface,
         );
-        let name_x = if row_host {
-            paint_icon(
-                ui.painter(),
-                rect.left_center() + Vec2::new(44.0, 0.0),
-                "crown",
-                16.0,
-                theme.scheme.primary,
-            );
-            64.0
-        } else {
-            44.0
-        };
         ui.painter().text(
-            rect.left_top() + Vec2::new(name_x, 11.0),
+            rect.left_top() + Vec2::new(44.0, 11.0),
             egui::Align2::LEFT_TOP,
             &user.username,
             medium_font(14.0),
@@ -269,26 +252,27 @@ fn users(ui: &mut Ui, theme: &Theme, state: &TogetherState, room: &RoomState) {
         );
         let mut badges = Vec::new();
         if me == Some(user.user_id.as_str()) {
-            badges.push("You");
+            badges.push("YOU");
         }
         if row_host {
-            badges.push("Host");
+            badges.push("HOST");
         }
         if !user.is_connected {
-            badges.push("Reconnecting");
+            badges.push("RECONNECTING");
         }
         if !badges.is_empty() {
             let text = badges.join(" · ");
             let name_width =
                 crate::widgets::text_width(ui.painter(), &user.username, medium_font(14.0));
             ui.painter().text(
-                rect.left_top() + Vec2::new(name_x + name_width + DP8, 13.0),
+                rect.left_top() + Vec2::new(44.0 + name_width + DP8, 13.0),
                 egui::Align2::LEFT_TOP,
                 text,
-                regular_font(11.0),
-                theme.scheme.primary,
+                font_label(10.0),
+                theme.scheme.on_surface_variant,
             );
         }
+        divider(ui, theme);
     }
 }
 
@@ -303,22 +287,20 @@ fn pending_requests(
     }
     section_header(ui, theme, "Join requests", ui.available_width(), false);
     for request in &session.pending_join_requests {
-        card(ui, theme, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    RichText::new(&request.username)
-                        .font(medium_font(14.0))
-                        .color(theme.scheme.on_surface),
-                );
-                if outlined_button(ui, theme, "Approve").clicked() {
-                    actions.push(TogetherAction::ApproveJoin(request.user_id.clone()));
-                }
-                if outlined_button(ui, theme, "Reject").clicked() {
-                    actions.push(TogetherAction::RejectJoin(request.user_id.clone()));
-                }
-            });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                RichText::new(&request.username)
+                    .font(medium_font(14.0))
+                    .color(theme.scheme.on_surface),
+            );
+            if outlined_button(ui, theme, "Approve").clicked() {
+                actions.push(TogetherAction::ApproveJoin(request.user_id.clone()));
+            }
+            if outlined_button(ui, theme, "Reject").clicked() {
+                actions.push(TogetherAction::RejectJoin(request.user_id.clone()));
+            }
         });
-        ui.add_space(DP8);
+        divider(ui, theme);
     }
 }
 
@@ -329,7 +311,8 @@ fn notices(ui: &mut Ui, theme: &Theme, state: &TogetherState) {
     ui.add_space(DP8);
     egui::Frame::new()
         .fill(theme.scheme.surface_container_low)
-        .corner_radius(12)
+        .stroke(Stroke::new(1.0, theme.scheme.outline_variant))
+        .corner_radius(SHAPE_LARGE)
         .inner_margin(egui::Margin::same(DP12 as i8))
         .show(ui, |ui| {
             for notice in &state.notices {
@@ -348,30 +331,18 @@ fn current_track(ui: &mut Ui, theme: &Theme, room: &RoomState) {
     };
     section_header(ui, theme, "Now playing", ui.available_width(), false);
     card(ui, theme, |ui| {
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(Vec2::splat(48.0), egui::Sense::hover());
-            ui.painter()
-                .rect_filled(rect, 8, theme.scheme.surface_container_highest);
-            paint_icon(
-                ui.painter(),
-                rect.center(),
-                if room.is_playing {
-                    "graphic_eq"
-                } else {
-                    "pause"
-                },
-                24.0,
-                theme.scheme.primary,
-            );
-            ui.vertical(|ui| {
-                ui.label(
-                    RichText::new(&track.title)
-                        .font(medium_font(15.0))
-                        .color(theme.scheme.on_surface),
-                );
-                label(ui, theme, &track.artist);
-            });
-        });
+        caps(
+            ui,
+            theme,
+            if room.is_playing { "Playing" } else { "Paused" },
+        );
+        ui.add_space(DP4);
+        ui.label(
+            RichText::new(&track.title)
+                .font(medium_font(15.0))
+                .color(theme.scheme.on_surface),
+        );
+        label(ui, theme, &track.artist);
     });
 }
 
@@ -400,13 +371,13 @@ fn queue(
             ui.allocate_exact_size(Vec2::new(ui.available_width(), 48.0), egui::Sense::click());
         if response.hovered() && host {
             ui.painter()
-                .rect_filled(rect, 8, theme.scheme.surface_container_high);
+                .rect_filled(rect, 0, theme.scheme.surface_container_high);
         }
         ui.painter().text(
             rect.left_top() + Vec2::new(8.0, 8.0),
             egui::Align2::LEFT_TOP,
             format!("{}", index + 1),
-            regular_font(11.0),
+            font_label(11.0),
             theme.scheme.on_surface_variant,
         );
         ui.painter().text(
@@ -431,6 +402,7 @@ fn queue(
         if host && response.clicked() {
             actions.push(TogetherAction::PlayRoomTrack(track.id.clone()));
         }
+        divider(ui, theme);
     }
 }
 
@@ -444,11 +416,7 @@ fn controls(
 ) {
     let host = state.is_host();
     ui.add_space(DP8);
-    ui.label(
-        RichText::new("Playback")
-            .font(medium_font(14.0))
-            .color(theme.scheme.on_surface),
-    );
+    caps(ui, theme, "Playback");
     ui.add_space(DP4);
     if !host {
         label(
@@ -479,11 +447,7 @@ fn controls(
             let play = filled_button(
                 ui,
                 theme,
-                Some(if room.is_playing {
-                    "pause"
-                } else {
-                    "play_arrow"
-                }),
+                None,
                 if room.is_playing { "Pause" } else { "Play" },
             );
             if host && play.clicked() {

@@ -3,7 +3,6 @@
 ## Prerequisites
 
 - Rust 1.99.1 (pinned by `rust-toolchain.toml`); `rustfmt`/`clippy`.
-  (`material-colors 0.5` requires rustc >= 1.97, so 1.95 cannot build the UI.)
 - Linux desktop toolchain: `pkg-config`, ALSA headers (`libasound2-dev` on
   Debian/Ubuntu) and a C compiler for bundled SQLite.
 - For AppImage: Docker (for the glibc-floor build), `curl`, and
@@ -70,10 +69,16 @@ Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (247 files, self-sha
 `87f5b3a7…`, `sha256sum -c --quiet` exits 0) in `rust:1.99.1-bookworm` with
 `CARGO_BUILD_JOBS=1` (release compile 23m59s); the shipped container binary is
 `build/target-container/release/metrolist`, sha256
-`66d37d1561dd054780abea69feec58a0df4f911e1e8d2b7fa130304aca08e06a`
+`801d64dcf82afb2ef03765ca3ea6723faa037abecf988381c96c968556aecaff`
 (61,117,448 bytes). The host binary is only a local reference and has a newer
 GLIBC floor. `dist/SNAPSHOT.txt` records the checks, mpv bundle and runtime
 dependencies.
+
+The manifest is packaging provenance, not the proof freeze. After the
+home-view work (2026-11-27) the working tree is **273 files**, self-sha
+`e141df46ddb150bd1f8b6b53770d0506e3f2286519a42b8a9b6f49ef6a4cca09`, and
+`sha256sum -c --quiet docs/SOURCE-FREEZE.sha256` exits 0. No release artifact was
+rebuilt, so the 0.1.3 numbers above still describe the 247-file release tree.
 
 Earlier builds stay at their tags and are not rebuilt: 0.1.2 (`c23bd361…`,
 container `d8e3f3ae…`) at tag `v0.1.2`, 0.1.1 (`01b40cf2…`, container

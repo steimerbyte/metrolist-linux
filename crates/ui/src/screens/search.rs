@@ -10,18 +10,20 @@ use crate::motion;
 use crate::routes::Route;
 use crate::services::Services;
 use crate::state::{FilterChoice, SearchState};
-use crate::theme::{regular_font, Theme, DP16, TOUCH};
+use crate::theme::{
+    font_label, regular_font, Theme, BODY_LARGE, DP16, DP24, DP8, LABEL_SMALL, TOUCH,
+};
 use crate::widgets::{chip, elided, empty_state, icon_button, paint_icon, section_header};
 
 use super::{error_block, load_more, mixed_items, skeleton_rows, Intent};
 
-/// Widest the search pill gets on a wide window; beyond this the field is a
+/// Widest the search field gets on a wide window; beyond this the field is a
 /// mostly-empty bar with the mic stranded at the far edge.
 const PILL_MAX_WIDTH: f32 = 720.0;
 
-/// Pill width and its left indent inside the content column.
+/// Field width and its left indent inside the content column.
 ///
-/// The pill keeps the 16 dp page gutters on a compact window and stops growing
+/// The field keeps the 16 dp page gutters on a compact window and stops growing
 /// at [`PILL_MAX_WIDTH`], staying centred in the column at every width.
 fn pill_geometry(content_width: f32) -> (f32, f32) {
     let width = (content_width - 2.0 * DP16).clamp(0.0, PILL_MAX_WIDTH);
@@ -48,7 +50,7 @@ pub fn show(
     pill_frame(ui, theme, pill_width, pill_indent, |ui| {
         pill_contents(ui, theme, state, field_id, pill_width, &mut intents);
     });
-    ui.add_space(8.0);
+    ui.add_space(DP8);
 
     // Suggestion popover, above the filter row.
     if state.suggestions_open && !state.query.trim().is_empty() && !state.suggestions.is_empty() {
@@ -60,26 +62,28 @@ pub fn show(
             motion::SELECT,
         );
         ui.set_opacity(previous_opacity * fade);
-        for suggestion in suggestions.iter().take(6) {
+        let shown = suggestions.len().min(6);
+        for (index, suggestion) in suggestions.iter().take(shown).enumerate() {
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::new(width, 36.0), egui::Sense::click());
             let (hover_t, press_t) = motion::interaction(ui, &response);
             if hover_t > 0.0 || press_t > 0.0 {
-                ui.painter().rect_filled(
-                    rect,
-                    8,
-                    motion::state_layer_at(theme.bg(), hover_t, press_t),
-                );
+                ui.painter()
+                    .rect_filled(rect, 0, theme.scheme.surface_container_high);
+            }
+            if index + 1 < shown {
+                ui.painter()
+                    .hline(rect.x_range(), rect.bottom(), theme.hairline());
             }
             elided(
                 ui.painter(),
-                egui::Pos2::new(rect.left() + 12.0, rect.center().y - 9.0),
+                egui::Pos2::new(rect.left() + DP16, rect.center().y - 9.0),
                 suggestion,
-                regular_font(15.0),
+                regular_font(BODY_LARGE),
                 theme.scheme.on_surface,
-                rect.width() - 24.0,
+                rect.width() - DP16 * 2.0,
             );
-            motion::focus_ring(ui, rect, 8, &response);
+            motion::focus_ring(ui, rect, 0, &response);
             if response.clicked() {
                 state.query = suggestion.clone();
                 state.suggestions_open = false;
@@ -87,12 +91,12 @@ pub fn show(
             }
         }
         ui.set_opacity(previous_opacity);
-        ui.add_space(8.0);
+        ui.add_space(DP8);
     }
 
     // Filter row.
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.spacing_mut().item_spacing.x = DP8;
         for choice in FilterChoice::ALL {
             let selected = state.filter == choice;
             let response = chip(ui, theme, choice.label(), selected);
@@ -104,7 +108,7 @@ pub fn show(
             }
         }
     });
-    ui.add_space(8.0);
+    ui.add_space(DP8);
 
     let needle = state.query.trim();
     // Typing has not run a query yet; only a submission may show "No results".
@@ -112,7 +116,7 @@ pub fn show(
         if needle.is_empty() && !state.history.is_empty() {
             section_header(ui, theme, "Recent searches", width, false);
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.spacing_mut().item_spacing.x = DP8;
                 for query in state.history.iter().take(10) {
                     let response = chip(ui, theme, query, false);
                     if response.clicked() {
@@ -121,7 +125,7 @@ pub fn show(
                     }
                 }
             });
-            ui.add_space(16.0);
+            ui.add_space(DP16);
         }
         empty_state(
             ui,
@@ -135,7 +139,7 @@ pub fn show(
 
     if state.results.initial_loading() {
         skeleton_rows(ui, theme, width);
-        ui.add_space(24.0);
+        ui.add_space(DP24);
         return intents;
     }
 
@@ -144,7 +148,7 @@ pub fn show(
             if error_block(ui, theme, error) {
                 intents.push(Intent::Refresh);
             }
-            ui.add_space(24.0);
+            ui.add_space(DP24);
             return intents;
         }
     }
@@ -157,7 +161,7 @@ pub fn show(
             "No results",
             "Try a different title or artist.",
         );
-        ui.add_space(24.0);
+        ui.add_space(DP24);
         return intents;
     };
 
@@ -176,7 +180,7 @@ pub fn show(
             "No results",
             "Try a different title or artist.",
         );
-        ui.add_space(24.0);
+        ui.add_space(DP24);
         return intents;
     }
 
@@ -215,13 +219,14 @@ pub fn show(
     if page.continuation.is_some() && load_more(ui, theme, state.results.more_loading) {
         intents.push(Intent::LoadMore);
     }
-    ui.add_space(24.0);
+    ui.add_space(DP24);
     intents
 }
 
-/// Draw the pill at `indent` and `pill_width` inside the content column and
-/// return its painted rect. The frame is pinned to the pill width so it cannot
-/// stretch back to the column, which is what put the mic at the far edge.
+/// Draw the flat search field at `indent` and `pill_width` inside the content
+/// column and return its painted rect. The frame is pinned to the field width
+/// so it cannot stretch back to the column, which is what put the mic at the
+/// far edge.
 fn pill_frame(
     ui: &mut Ui,
     theme: &Theme,
@@ -229,33 +234,39 @@ fn pill_frame(
     indent: f32,
     add_contents: impl FnOnce(&mut Ui),
 ) -> egui::Rect {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.add_space(indent);
-        let inner_width = (pill_width - 2.0 * DP16).max(0.0);
-        egui::Frame::new()
-            .fill(theme.scheme.surface_container_high)
-            .corner_radius(24)
-            .inner_margin(egui::Margin::symmetric(16, 10))
-            .show(ui, |ui| {
-                let start = ui.cursor().min;
-                add_contents(ui);
-                // Frames shrink to their content; extend the content rect to
-                // the pinned width so the background spans the whole pill.
-                ui.expand_to_include_rect(egui::Rect::from_min_size(
-                    start,
-                    Vec2::new(inner_width, ui.min_rect().height()),
-                ));
-            })
-            .response
-            .rect
-    })
-    .inner
+    let rect = ui
+        .horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(indent);
+            let inner_width = (pill_width - 2.0 * DP16).max(0.0);
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(16, 10))
+                .show(ui, |ui| {
+                    let start = ui.cursor().min;
+                    add_contents(ui);
+                    // Frames shrink to their content; extend the content rect
+                    // to the pinned width so the field spans the underline.
+                    ui.expand_to_include_rect(egui::Rect::from_min_size(
+                        start,
+                        Vec2::new(inner_width, ui.min_rect().height()),
+                    ));
+                })
+                .response
+                .rect
+        })
+        .inner;
+    ui.painter().hline(
+        rect.x_range(),
+        rect.bottom(),
+        egui::Stroke::new(1.0, theme.scheme.outline),
+    );
+    rect
 }
 
-/// Icon, field and mic inside the pill. Both icons sit in 40 dp slots and the
-/// field takes what the slots, gaps and 16 dp insets leave, so the text column
-/// is centred between equal side margins instead of running out to the edges.
+/// Icon, field and mic above the underline. Both icons sit in 40 dp slots and
+/// the field takes what the slots, gaps and 16 dp insets leave, so the text
+/// column is centred between equal side margins instead of running out to the
+/// edges.
 fn pill_contents(
     ui: &mut Ui,
     theme: &Theme,
@@ -277,9 +288,13 @@ fn pill_contents(
         let field_width = (pill_width - 2.0 * DP16 - 2.0 * 10.0 - 2.0 * TOUCH).max(40.0);
         let edit = egui::TextEdit::singleline(&mut state.query)
             .id(field_id)
-            .hint_text("Songs, albums, artists")
+            .hint_text(
+                egui::RichText::new("SONGS, ALBUMS, ARTISTS")
+                    .font(font_label(LABEL_SMALL))
+                    .color(theme.scheme.on_surface_variant),
+            )
             .frame(egui::Frame::NONE)
-            .font(regular_font(16.0))
+            .font(regular_font(BODY_LARGE))
             .desired_width(field_width);
         let response = ui.add(edit);
         if response.changed() {

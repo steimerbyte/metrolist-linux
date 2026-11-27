@@ -1,6 +1,6 @@
 [package]
 name = "ml-ui"
-description = "Metrolist Linux egui application: Material 3 shell, theme, widgets and screens"
+description = "Metrolist Linux egui application: Nothing shell, theme, widgets and screens"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -27,9 +27,9 @@ ml-integrations = { workspace = true, features = ["discord"] }
 ml-together.workspace = true
 ml-downloads.workspace = true
 ml-recognition.workspace = true
+ml-boot.workspace = true
 eframe.workspace = true
 egui.workspace = true
-material-colors.workspace = true
 image = { workspace = true, features = ["jpeg", "webp"] }
 directories.workspace = true
 serde_json.workspace = true

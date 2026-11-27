@@ -14,26 +14,33 @@ Cargo workspace, resolver 2, Rust 1.99.1 (`rust-toolchain.toml`).
 | Crate | Package | Path | Owner / state |
 |---|---|---|---|
 | `core` | `ml-core` | `crates/core/` | **Frozen** foundation. Models, queue, settings, events, media types, errors, utils. |
-| `innertube` | `ml-innertube` | `crates/innertube/` | InnerTube workstream. Live unauthenticated WEB_REMIX client, parsers and stream resolution. The player/stream path uses VISIONOS and needs no PO token; cookie-session account auth and library snapshots are implemented, while a PO-token provider is not. |
+| `innertube` | `ml-innertube` | `crates/innertube/` | InnerTube workstream. Live unauthenticated WEB_REMIX client, parsers, stream resolution and the loopback stream shim. The player/stream path uses VISIONOS and needs no PO token; cookie-session account auth and library snapshots are implemented, while a PO-token provider is not. |
 | `lyrics` | `ml-lyrics` | `crates/lyrics/` | Lyrics workstream. Provider ladder, LRC/TTML parsing, Japanese/Korean/Chinese/Hindi/Macedonian romanisation and key-gated translation. |
 | `store` | `ml-store` | `crates/store/` | Store workstream. SQLite schema v1 forward migrations and typed CRUD for library, likes, history, playlists, queue and settings. |
 | `downloads` | `ml-downloads` | `crates/downloads/` | Downloads workstream. Manifest-backed queue/worker pool, ranged VISIONOS fetches, progress, retry/remove/clear, storage budget. |
 | `audio` | `ml-audio` | `crates/audio/` | Audio workstream. mpv JSON IPC engine, controller, EQ, device listing. |
 | `integrations` | `ml-integrations` | `crates/integrations/` | MPRIS, tray, now-playing notifications, single-instance forwarding, optional Discord presence. |
-| `ui` | `ml-ui` | `crates/ui/` | M3 theme, widgets, shell, live screens, `metrolist` binary. |
+| `ui` | `ml-ui` | `crates/ui/` | Nothing theme, widgets, shell, live screens, `metrolist` binary. |
+| `boot` | `ml-boot` | `crates/boot/` | Boot registry generated at build time from `crates/*/module.meta`, plus the pure start-up timeline. No external dependencies. |
 
 Other owned paths:
 
 - `crates/core/src/` — `lib.rs`, `models.rs`, `media.rs`, `queue.rs`, `player.rs`,
   `settings.rs`, `events.rs`, `error.rs`, `util.rs`.
-- `crates/ui/src/` — `lib.rs`, `main.rs`, `app.rs`, `routes.rs`, `services.rs`,
+- `crates/ui/src/` — `lib.rs`, `main.rs`, `app.rs`, `boot.rs`, `routes.rs`, `services.rs`,
   `state.rs`, `art.rs`, `desktop.rs`, `pure.rs`, `mock.rs`, `settings_store.rs`,
   `theme/{mod,scheme,fonts,type_scale}.rs`,
   `widgets/{mod,controls,rows,feedback}.rs`, `shell/mod.rs`,
   `screens/{mod,home,search,detail,library,liked,local_playlist,downloads,history,
   lyrics,player,queue,settings,account,catalog,stats,recognize,placeholder}.rs`.
 - `crates/ui/assets/fonts/` — fonts compiled into the binary with
-  `include_bytes!` (provenance and hashes in `assets/fonts/SOURCES.md`).
+  `include_bytes!` (provenance and hashes in `crates/ui/assets/fonts/SOURCES.md`).
+- `crates/boot/src/` — `lib.rs` (registry types, `MODULES`, `run_init`),
+  `gen.rs` (`module.meta` parser and renderer, shared with `build.rs`),
+  `timeline.rs` (pure boot timing), `bin/boot-list.rs` (prints the registry).
+- `crates/*/module.meta` — one boot-registry entry per crate (`label`, `order`,
+  optional `init`); `crates/boot/build.rs` turns them into
+  `$OUT_DIR/modules.rs`. Deleting the file keeps a crate out of the sequence.
 - Root: `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `.github/workflows/ci.yml`,
   `README.md`, `LICENSE`, `NOTICE`.
 - Assets/packaging (separate owner): `assets/`, `packaging/`, `.github/`,
@@ -208,7 +215,7 @@ pub enum LibrarySort { RecentlyAdded, Alphabetical, MostPlayed, Artist }
 pub struct ProxyConfig { enabled: bool, url: String, username: String, password: String }
 pub struct LyricsSettings { lrclib, lyrics_plus, kugou, better_lyrics, paxsenix, zemer, romanize: bool }
 pub struct DownloadSettings { directory: Option<String>, concurrent_limit: u8, normalize: bool }
-pub struct Settings { theme_mode, seed_color: u32 /* default 0xED5564 */,
+pub struct Settings { theme_mode, seed_color: u32 /* retained, unused */,
     dynamic_accent: bool, audio_quality, content_language, content_country,
     proxy, lyrics, downloads, audio_normalization, crossfade_enabled,
     crossfade_seconds, sleep_timer_minutes, sleep_timer_fade, library_sort,
@@ -488,12 +495,23 @@ pub enum DemoMode { Player, Queue, Lyrics, Library, Settings, History, Liked, Do
 pub struct RunOptions { pub mode: RunMode, pub width: u32, pub height: u32, pub demo: Option<DemoMode> }
 pub fn run(options: RunOptions) -> eframe::Result;
 pub struct App; // eframe::App; App::new(cc, options, instance_guard)
+pub struct boot::BootApp; // eframe::App wrapper: paints the boot overlay over
+                          // `App`, delegates logic/ui-save/exit/raw input
 ```
+
+`run` wraps `App` in `boot::BootApp` so the start-up sequence never touches
+`app.rs`; the overlay is drawn after the app each frame and covered by
+`Order::Tooltip`.
 
 Internal module contract (UI workstream may extend):
 
-- `theme::Theme::{from_settings, install, bg, card}`, `ColorScheme::from_seed`,
-  M3 type scale and shape constants, bundled `fonts`.
+- `theme::Theme::{from_settings, install, bg, card, hairline}`,
+  `ColorScheme::from_seed` (the seed is ignored; the palette is monochrome),
+  Nothing type scale and shape constants, bundled `fonts`. `theme::{font_display,
+  font_label, font_regular, font_medium, font_bold}` map to Doto (display
+  ≥ 36 px), Space Mono (uppercase labels) and Space Grotesk (body, 400/500).
+- `boot::{BootApp}` — the overlay plus its state machine; it reads
+  `ml_boot::MODULES` and `ml_boot::state_at` and paints in `Order::Tooltip`.
 - `widgets::{chip, filled_button, outlined_button, icon_button, icon_button_at,
   filled_icon_button, section_header, nav_item, slider, song_row, album_card,
   modal, Toasts, shimmer, empty_state}`. `song_row` returns `SongRowResponse`
@@ -527,6 +545,34 @@ Keyboard: Space play/pause, ←/→ seek 5 s, ↑/↓ volume, M mute, S shuffle,
 R repeat, Esc closes queue → player → tab, `/` search, Ctrl+1..4 tabs.
 Screenshot capture uses `Context::request_screenshot` once demo/artwork/playback
 readiness settles; smoke mode prints `SMOKE_OK frames=N backend=…`.
+
+### 2.8 Boot sequence and module registry
+
+`ml-boot` is a leaf crate (no dependencies) with two halves:
+
+- **Registry.** One `crates/<dir>/module.meta` per module:
+  `label = UPPER CASE`, `order = 10` (unique `u16`), optional
+  `init = crate::fn_path` pointing at a `fn() -> bool` that must be cheap and
+  non-blocking. `crates/boot/build.rs` scans `crates/*/module.meta`, rejects
+  missing/unknown keys, non-`u16` orders and duplicate orders at build time, and
+  writes `$OUT_DIR/modules.rs` sorted by `order`. `MODULES` is that include;
+  the boot UI iterates it, so a new crate with a `module.meta` appears in the
+  sequence without touching `crates/ui/src/boot.rs` (verified with a temporary
+  crate: `BOOT module=boot-dummy status=ok`, then removed).
+- **Timeline.** `timeline::{SLOT = 0.16, LOAD = 0.05, HANDOVER = 0.16}`,
+  `state_at(elapsed, count)` → `{index, phase, row_t, exit_t, finished}` and
+  `total(count) = count·SLOT + HANDOVER` (1.76 s for ten modules). Pure `f32`
+  arithmetic, unit-tested; no egui types.
+
+`boot::BootApp` wraps `App` in `run()`. Each frame it lets the app paint, then
+paints the overlay (wordmark, `SYSTEM BOOT`, counter, one row per module with
+`LOADING` → `OK`, 1-px rules, progress line) and fades the whole layer out over
+`HANDOVER`. While the overlay is visible `raw_input_hook` swallows input; Enter,
+a primary click or a touch start sets the skip flag. Every module logs
+`BOOT module=<name> status=ok` exactly once (or `status=fail` and one red row if
+its init hook returns `false`). `--smoke` and `--screenshot` skip the overlay but
+still log every module; `Settings::reduce_motion` / `METROLIST_REDUCE_MOTION`
+finish it in one frame.
 
 ## 3. Data flow
 
@@ -573,8 +619,15 @@ UI intent (egui widget)                      backend result
 - Stream URLs: `PlaybackController::poll` may emit `NeedUrl`; the UI first asks
   `DownloadManager::path_for`. A verified offline file is submitted as a
   percent-encoded `file://` URL; otherwise `InnertubeClient::stream_info`
-  resolves on the runtime. Already-known network URLs come from the
-  `StreamResolver` trait backed by `cached_stream` plus a local map.
+  resolves on the runtime, and the resolved URL is handed out through the
+  loopback `StreamShim` (127.0.0.1, per-process token) instead of directly.
+  Since the SABR rollout (measured 2026-11-27) a player URL answers 403 to the
+  open-ended `Range: bytes=0-` that mpv sends, and one URL serves only a few
+  512 KiB ranges; the shim fetches 512 KiB ranges, re-mints on 403/410 and
+  replays the span as one 206, so mpv keeps its cache and seek behaviour.
+  Already-known network URLs come from the `StreamResolver` trait backed by
+  `cached_stream` plus a local map; with the shim active it returns the
+  loopback URL instead.
 - Downloads: the manager's event stream is forwarded as `UiEvent::Download`;
   the UI refreshes the manifest/storage snapshot and a per-row badge cache,
   then repaints. `DownloadEvent::Completed` also sends a toast.
@@ -697,8 +750,8 @@ The UI needs a Wayland/X11 session with a working wgpu backend (Vulkan on the
 reference host). `--screenshot` captures the framebuffer via
 `Context::request_screenshot`, so no compositor screencopy support is needed.
 Release packaging (AppImage, glibc floor) is documented in `docs/BUILD.md`,
-which uses the `rust:1.99.1-bookworm` container: 1.95 cannot build
-`material-colors 0.5` (it requires rustc ≥ 1.97).
+which uses the `rust:1.99.1-bookworm` container; the earlier 1.95 exclusion came
+from `material-colors`, which the Nothing redesign removed.
 
 ## 7. Workstream ownership and status
 
@@ -712,6 +765,7 @@ which uses the `rust:1.99.1-bookworm` container: 1.95 cannot build
 | Audio | `crates/audio/**` | mpv subprocess + JSON IPC behind `PlaybackController`; two engines for crossfade, seek, volume, shuffle, repeat, radio queues, 10-band EQ, skip silence, speed, manual-gain normalization, sleep timer/fade and device fallback verified on the host. Per-track loudness metadata remains unavailable. |
 | Integrations | `crates/integrations/**`, `crates/ui/src/desktop.rs` | MPRIS (snapshot updates, seek/volume/shuffle/repeat/raise/quit), tray Show/Hide/Play-Pause/Next/Previous/Quit, now-playing notifications, single-instance argv/deep-link forwarding and optional Discord presence are driven by `App`. |
 | UI screens | `crates/ui/src/screens/**`, `app.rs`, `shell/` | Live Home/Search/Album/Artist/Playlist, Charts, Moods & genres, New releases, anonymous podcast shelves/show pages, Library (songs/albums/artists/playlists/downloads/history), Liked, local playlist editing, Account (cookie import, masked profile, library sync/sign-out), Stats and Wrapped (period chips, totals/chart/top lists, story cards), song recognition (mic entry, listening/cancel, processing, match actions), Settings (appearance, playback, desktop, storage, about), player with EQ/speed/device/sleep controls, queue and lyrics screens. Together is a placeholder. |
+| Boot | `crates/boot/**`, `crates/ui/src/boot.rs`, `crates/*/module.meta` | Build-time module registry, pure timeline, Nothing-OS overlay with `LOADING` → `OK` rows, progress line, skip on Enter/click, instant path under reduced motion, one `BOOT module=… status=…` line per module. |
 | Packaging/parity | `assets/`, `packaging/`, `.github/`, `docs/PARITY.md`, `docs/TEST-PARITY.md` | AppImage, icons/i18n, CI container, parity tracking. |
 
 Frozen foundation (change only additively): `crates/core/**`,
@@ -769,7 +823,8 @@ add `egui-elegance`.
   unbounded transfers are what googlevideo caps (measured: IOS 403s after
   512 KiB/1 MiB). A token provider seam exists and defaults to no tokens. There are no live
   network tests in CI; `ml-audio` live tests are `#[ignore]`d and need mpv.
-- Dynamic desktop accent detection is not implemented; the Settings screen
-  labels it unavailable and uses the seed colour.
+- Dynamic desktop accent detection is not implemented and is obsolete: the
+  Nothing palette is monochrome, so the picker is gone and `seed_color` /
+  `dynamic_accent` are accepted for settings compatibility only.
 - The UI screenshot/smoke harness needs a working wgpu backend and a
   Wayland/X11 session; it is not part of `cargo test`.

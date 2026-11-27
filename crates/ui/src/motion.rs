@@ -198,17 +198,6 @@ pub fn press_scale_at(t: f32) -> f32 {
     lerp(1.0, PRESS_SCALE, t.clamp(0.0, 1.0))
 }
 
-/// Nav-item indicator size: 32×28 dp unselected, 56×32 dp selected.
-pub fn nav_pill(t: f32) -> Vec2 {
-    let t = t.clamp(0.0, 1.0);
-    Vec2::new(lerp(32.0, 56.0, t), lerp(28.0, 32.0, t))
-}
-
-/// Chip corner radius: 8 dp unselected, 16 dp (full pill) selected.
-pub fn chip_radius(t: f32) -> f32 {
-    lerp(8.0, 16.0, t.clamp(0.0, 1.0))
-}
-
 /// Keyboard focus ring: 2 dp inside the control, fading in over [`HOVER`].
 ///
 /// The colour comes from `visuals.widgets.active.bg_stroke`, which `Theme`
@@ -286,15 +275,9 @@ mod tests {
     }
 
     #[test]
-    fn press_and_selection_geometry_hit_their_endpoints() {
+    fn press_scale_hits_its_endpoints() {
         assert_eq!(press_scale_at(0.0), 1.0);
         assert!((press_scale_at(1.0) - PRESS_SCALE).abs() < 1e-6);
-        assert_eq!(nav_pill(0.0), Vec2::new(32.0, 28.0));
-        assert_eq!(nav_pill(1.0), Vec2::new(56.0, 32.0));
-        let halfway = nav_pill(0.5);
-        assert!(halfway.x > 32.0 && halfway.x < 56.0);
-        assert_eq!(chip_radius(0.0), 8.0);
-        assert_eq!(chip_radius(1.0), 16.0);
     }
 
     #[test]

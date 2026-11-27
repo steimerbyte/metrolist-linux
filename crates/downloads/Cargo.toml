@@ -10,7 +10,6 @@ authors.workspace = true
 
 [dependencies]
 ml-core.workspace = true
-ml-innertube.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -20,7 +19,3 @@ parking_lot.workspace = true
 crossbeam-channel.workspace = true
 blake3.workspace = true
 directories.workspace = true
-
-[[bin]]
-name = "downloads-probe"
-path = "src/bin/downloads-probe.rs"

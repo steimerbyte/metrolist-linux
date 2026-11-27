@@ -6,7 +6,7 @@ use ml_core::{QueueSource, Song};
 use crate::art::ArtCache;
 use crate::services::Services;
 use crate::state::Load;
-use crate::theme::{bold_font, regular_font, Theme, DP24, DP4, DP8, TITLE_LARGE};
+use crate::theme::{font_label, medium_font, Theme, DP24, DP4, DP8, HEADLINE_SMALL, LABEL_SMALL};
 use crate::widgets::{empty_state, filled_button, outlined_button};
 
 use super::{error_block, skeleton_rows, song_list, Intent};
@@ -51,16 +51,16 @@ pub fn show(
     ui.add_space(DP4);
     ui.label(
         egui::RichText::new("Liked songs")
-            .font(bold_font(TITLE_LARGE))
+            .font(medium_font(HEADLINE_SMALL))
             .color(theme.scheme.on_surface),
     );
     ui.label(
         egui::RichText::new(format!(
             "{} {}",
             songs.len(),
-            if songs.len() == 1 { "song" } else { "songs" }
+            if songs.len() == 1 { "SONG" } else { "SONGS" }
         ))
-        .font(regular_font(13.0))
+        .font(font_label(LABEL_SMALL))
         .color(theme.scheme.on_surface_variant),
     );
     ui.add_space(DP8);

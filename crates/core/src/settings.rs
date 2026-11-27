@@ -91,6 +91,41 @@ pub struct DownloadSettings {
     pub normalize: bool,
 }
 
+/// Where the home screen pulls its shelves from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HomePage {
+    /// `FEmusic_home`: personalised, needs a live session.
+    Home,
+    /// `FEmusic_explore`: curated, answers signed out.
+    #[default]
+    Explore,
+    /// `FEmusic_charts`.
+    Charts,
+    /// `FEmusic_new_releases`.
+    NewReleases,
+}
+
+/// Home feed selection: page plus the shelves kept from it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HomeView {
+    pub page: HomePage,
+    /// Shelf browse ids matched as prefixes; empty keeps every shelf. The
+    /// generated Trending playlist id changes per session, so it is stored as
+    /// its `VL` prefix.
+    pub sections: Vec<String>,
+}
+
+impl Default for HomeView {
+    fn default() -> Self {
+        Self {
+            page: HomePage::Explore,
+            sections: vec!["FEmusic_new_releases_albums".to_string(), "VL".to_string()],
+        }
+    }
+}
+
 /// Persistent application settings. Missing JSON fields fall back to defaults.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -117,6 +152,7 @@ pub struct Settings {
     pub reduce_motion: bool,
     pub hide_explicit: bool,
     pub hide_video_songs: bool,
+    pub home: HomeView,
 }
 
 impl Default for Settings {
@@ -145,6 +181,7 @@ impl Default for Settings {
             reduce_motion: false,
             hide_explicit: false,
             hide_video_songs: false,
+            home: HomeView::default(),
         }
     }
 }

@@ -139,10 +139,24 @@ pub(crate) fn resolve_muted(config: &AudioConfig) -> bool {
     config.muted.unwrap_or_else(env_test_mute)
 }
 
-/// Whether a stream-level mute may be cleared. False keeps test/probe engines
+/// Whether a stream-level mute may be cleared. `ao-mute` only exists while an
+/// audio output is open, so a reassert before `file-loaded`/`audio-reconfig`
+/// answers "error accessing property". False also keeps test/probe engines
 /// silent even on hosts whose stream-restore entry is unmuted.
-pub(crate) fn should_clear_stream_mute(allow_unmute: bool, intended_muted: bool) -> bool {
-    allow_unmute && !intended_muted
+pub(crate) fn should_clear_stream_mute(
+    ao_open: bool,
+    allow_unmute: bool,
+    intended_muted: bool,
+) -> bool {
+    ao_open && allow_unmute && !intended_muted
+}
+
+/// Errors that never belong in the player: `property unavailable` is mpv's
+/// answer for a property without a value, and `ao-mute` is absent whenever no
+/// output is open (startup, device switch, idle).
+pub(crate) fn is_benign_mpv_error(description: &str, error: &str) -> bool {
+    error == "property unavailable"
+        || (error == "error accessing property" && description.contains("\"ao-mute\""))
 }
 
 fn base_args(socket_path: &Path, muted: bool) -> Vec<String> {
@@ -730,6 +744,9 @@ struct Ipc {
     /// stream restore is applied asynchronously and can overwrite the first
     /// clear, so it is repeated for a few ticks (~400 ms).
     unmute_checks: u8,
+    /// An audio output is open (`file-loaded`/`audio-reconfig` seen, cleared on
+    /// `start-file`/`end-file`/`idle`); `ao-mute` is absent before that.
+    ao_open: bool,
     dirty: bool,
     broken: bool,
 }
@@ -763,6 +780,7 @@ impl Ipc {
             last_audio_params: AudioParams::default(),
             allow_unmute,
             unmute_checks: 0,
+            ao_open: false,
             dirty: true,
             broken: false,
         }
@@ -1032,7 +1050,7 @@ impl Ipc {
     /// outputs: a restored `ao-mute=true` silences the node while mpv (and the
     /// UI) report 100%/unmuted.
     fn clear_stream_mute(&mut self, event_tx: &Sender<AudioEvent>) {
-        if !should_clear_stream_mute(self.allow_unmute, self.state.muted) {
+        if !should_clear_stream_mute(self.ao_open, self.allow_unmute, self.state.muted) {
             return;
         }
         self.request(
@@ -1044,7 +1062,7 @@ impl Ipc {
     /// Clear now and keep reasserting for [`STREAM_UNMUTE_TICKS`], because the
     /// server can apply its restored mute just after the output opens.
     fn schedule_stream_unmute(&mut self, event_tx: &Sender<AudioEvent>) {
-        if !should_clear_stream_mute(self.allow_unmute, self.state.muted) {
+        if !should_clear_stream_mute(self.ao_open, self.allow_unmute, self.state.muted) {
             return;
         }
         self.unmute_checks = STREAM_UNMUTE_TICKS;
@@ -1062,7 +1080,7 @@ impl Ipc {
                     .pending
                     .remove(&request_id)
                     .unwrap_or_else(|| format!("#{request_id}"));
-                if error != "success" && error != "property unavailable" {
+                if error != "success" && !is_benign_mpv_error(&command, &error) {
                     let _ = event_tx.send(AudioEvent::Error(format!("mpv {command}: {error}")));
                 }
                 true
@@ -1085,6 +1103,8 @@ impl Ipc {
                     self.state.eof = false;
                     self.state.loading = false;
                     self.dirty = true;
+                    // The output exists now; only here may `ao-mute` be set.
+                    self.ao_open = true;
                     self.schedule_stream_unmute(event_tx);
                     if let Some(start_ms) = self.pending_start_ms.take() {
                         self.request(
@@ -1100,6 +1120,7 @@ impl Ipc {
                 }
                 "start-file" => {
                     self.state.loading = true;
+                    self.ao_open = false;
                     self.dirty = true;
                     true
                 }
@@ -1108,6 +1129,7 @@ impl Ipc {
                     true
                 }
                 "end-file" => {
+                    self.ao_open = false;
                     match reason.as_deref() {
                         Some("eof") => self.emit_end_once(event_tx),
                         Some("error") => {
@@ -1125,6 +1147,7 @@ impl Ipc {
                     true
                 }
                 "idle" => {
+                    self.ao_open = false;
                     self.state.idle = true;
                     self.state.loading = false;
                     self.dirty = true;
@@ -1133,6 +1156,7 @@ impl Ipc {
                 "audio-reconfig" => {
                     // A device switch can recreate the output node; clear any
                     // mute the server restores on the fresh node.
+                    self.ao_open = true;
                     self.schedule_stream_unmute(event_tx);
                     self.dirty = true;
                     true
@@ -1399,10 +1423,27 @@ mod tests {
 
     #[test]
     fn stream_mute_is_only_cleared_when_audible_playback_is_allowed() {
-        assert!(should_clear_stream_mute(true, false));
-        assert!(!should_clear_stream_mute(true, true));
-        assert!(!should_clear_stream_mute(false, false));
-        assert!(!should_clear_stream_mute(false, true));
+        assert!(should_clear_stream_mute(true, true, false));
+        assert!(!should_clear_stream_mute(true, true, true));
+        assert!(!should_clear_stream_mute(true, false, false));
+        assert!(!should_clear_stream_mute(true, false, true));
+        // No output open yet: `ao-mute` does not exist.
+        assert!(!should_clear_stream_mute(false, true, false));
+    }
+
+    #[test]
+    fn ao_mute_errors_never_reach_the_player() {
+        let ao_mute = "\"set_property\" \"ao-mute\" false";
+        assert!(is_benign_mpv_error(ao_mute, "error accessing property"));
+        assert!(is_benign_mpv_error(
+            "\"get_property\" \"volume\"",
+            "property unavailable"
+        ));
+        assert!(!is_benign_mpv_error(
+            "\"set_property\" \"volume\" 50",
+            "error accessing property"
+        ));
+        assert!(!is_benign_mpv_error(ao_mute, "invalid parameter"));
     }
 
     #[test]

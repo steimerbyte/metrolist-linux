@@ -238,6 +238,7 @@ pub fn from_browse(value: &Value, channel_id: &str) -> ArtistDetails {
                 sections.push(HomeSection {
                     kind: super::section_kind(&title),
                     title,
+                    id: None,
                     items,
                     continuation: token,
                 });
@@ -279,6 +280,7 @@ pub fn from_continuation(value: &Value) -> HomeFeed {
                 .then(|| HomeSection {
                     kind: ml_core::SectionKind::Unknown,
                     title: String::new(),
+                    id: None,
                     items,
                     continuation: continuation(shelf.get("continuations")),
                 })
@@ -379,6 +381,7 @@ pub fn items_from_browse(value: &Value) -> HomeFeed {
             .then(|| HomeSection {
                 kind: ml_core::SectionKind::Unknown,
                 title,
+                id: None,
                 items,
                 continuation: token.clone(),
             })

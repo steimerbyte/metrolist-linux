@@ -56,6 +56,7 @@ fn playlist_shelf_section(shelf: &Value) -> Option<HomeSection> {
     }
     Some(HomeSection {
         title: String::new(),
+        id: None,
         items,
         continuation: continuation(shelf.get("continuations")),
         kind: ml_core::SectionKind::Unknown,

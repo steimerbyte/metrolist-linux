@@ -4,8 +4,8 @@
 
 | file | sha256 (at freeze) |
 |------|--------------------|
-| crates/audio/src/controller.rs | 3e27db2dce3d7eaa48b7e015be773f95c76697fb0baf42462fac0cb637eca1b2 |
-| crates/audio/src/engine.rs | 1377ec5c5f76a2b0a16fb5d70b335beee8f9b1926ce5056d44eeda53ce7b7b15 |
+| crates/audio/src/controller.rs | e8c391d33b4fb743775ab5ae6c68b289199aa11f0a1380dba4b22d50f62fee5d |
+| crates/audio/src/engine.rs | 74c656ac3af6ca7dedc043924b7d82f873215ffd6c433f6d51a3e149e1cbfc8a |
 
 Toolchain: Verus `0.2026.11.02.8bf68ee` (tag `release/0.2026.11.02.8bf68ee`),
 bundled Rust `1.99.1-x86_64-unknown-linux-gnu`; workspace pin `1.99.1`.
@@ -243,3 +243,19 @@ tests in `controller.rs`). New hashes are in the table above (controller
 The `keep-stream` click path (`is_current_entry`, `play_queue`) is CANDIDATE:
 it is a controller state machine over `fade`/`current_url`/queue contents,
 pinned by three regression tests, not a closed-form model.
+
+## Re-freeze 2026-11-27 (stream resolver, invalidate)
+
+`crates/audio/src/controller.rs` gained the `StreamResolver` trait (loopback
+stream shim) and an `invalidate` method plus tests. `crates/audio/src/engine.rs`
+gained the `ao_open` gate: `ao-mute` is reasserted only after `file-loaded` /
+`audio-reconfig`, and an `ao-mute` "error accessing property" response is
+filtered as benign instead of becoming `AudioEvent::Error`. The proven
+obligations `sleep_seconds_spec`, `sleep_window_contains` and `Ipc::request`
+are byte-identical (`Ipc::request` is outside every hunk; the response filter
+lives in `handle_message`, not in `request`).
+
+Semantic delta, re-proven: `should_clear_stream_mute` now also requires an
+open output (`ao_open && allow_unmute && !intended_muted`). The frozen
+scaffold and the candidate were updated to the three-argument predicate, and
+the table lemma pins the five rows plus `lemma_no_output_never_unmutes`.

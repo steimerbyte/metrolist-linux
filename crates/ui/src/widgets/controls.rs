@@ -12,10 +12,7 @@ use ml_core::format_position;
 use super::{paint_icon, paint_icon_swap, text, text_width};
 use crate::motion;
 use crate::pure::{fraction_at, progress_fraction, progress_pulse, seek_target, smooth_progress};
-use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, BODY_SMALL, DP12, DP16, DP20, DP32, DP48, DP8,
-    LABEL_LARGE, TITLE_LARGE, TOUCH,
-};
+use crate::theme::{font_label, Theme, DP12, DP16, DP20, DP32, DP48, DP8, TOUCH};
 
 fn paint_centered_line(
     painter: &egui::Painter,
@@ -124,43 +121,61 @@ fn paint_icon_button_state(ui: &Ui, app_theme: &Theme, rect: Rect, response: &Re
     scale
 }
 
-/// M3 filter chip (32 dp, radius 8).
+/// Filter chip: 32 dp pill, hairline frame, filled when selected.
 pub fn chip(ui: &mut Ui, app_theme: &Theme, label: &str, selected: bool) -> Response {
-    let font = medium_font(LABEL_LARGE);
-    let width = text_width(ui.painter(), label, font.clone()) + DP12 * 2.0;
+    let label = label.to_uppercase();
+    let font = font_label(12.0);
+    let width = text_width(ui.painter(), &label, font.clone()) + DP12 * 2.0;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 32.0), Sense::click());
     let selected_t = motion::t(ui, response.id.with("selected"), selected, motion::SELECT);
-    let base = app_theme
-        .scheme
-        .surface_container_high
-        .lerp_to_gamma(app_theme.scheme.secondary_container, selected_t);
     let (hover_t, press_t) = motion::interaction(ui, &response);
-    let fill = motion::state_layer_at(base, hover_t, press_t);
     let scale = motion::press_scale_at(press_t);
     let draw = Rect::from_center_size(rect.center(), rect.size() * scale);
-    let radius = motion::chip_radius(selected_t) as u8;
-    ui.painter().rect_filled(draw, radius, fill);
+    let radius = u8::MAX;
+    if selected_t > 0.0 || hover_t > 0.0 || press_t > 0.0 {
+        let base = app_theme
+            .scheme
+            .surface
+            .lerp_to_gamma(app_theme.scheme.on_surface, selected_t);
+        ui.painter().rect_filled(
+            draw,
+            radius,
+            base.lerp_to_gamma(
+                app_theme.scheme.surface_container_highest,
+                hover_t.max(press_t) * 0.25,
+            ),
+        );
+    }
+    let stroke = if selected_t > 0.5 {
+        Stroke::new(1.0, app_theme.scheme.on_surface)
+    } else {
+        app_theme.hairline()
+    };
+    ui.painter()
+        .rect_stroke(draw, radius, stroke, StrokeKind::Inside);
     let color = app_theme
         .scheme
         .on_surface_variant
-        .lerp_to_gamma(app_theme.scheme.on_secondary_container, selected_t);
+        .lerp_to_gamma(app_theme.scheme.surface, selected_t);
     let galley = ui.painter().layout_no_wrap(label.to_owned(), font, color);
     ui.painter()
         .galley(draw.center() - galley.size() / 2.0, galley, color);
     motion::focus_ring(ui, draw, radius, &response);
-    response.widget_info(|| WidgetInfo::selected(egui::Role::CheckBox, true, selected, label));
+    response
+        .widget_info(|| WidgetInfo::selected(egui::Role::CheckBox, true, selected, label.as_str()));
     response
 }
 
-/// Filled primary button with optional leading icon.
+/// Filled primary button: a pill, on_surface fill, surface text.
 pub fn filled_button(
     ui: &mut Ui,
     app_theme: &Theme,
     icon_name: Option<&str>,
     label: &str,
 ) -> Response {
-    let font = medium_font(LABEL_LARGE);
-    let tw = text_width(ui.painter(), label, font.clone());
+    let label = label.to_uppercase();
+    let font = font_label(12.0);
+    let tw = text_width(ui.painter(), &label, font.clone());
     let extra = if icon_name.is_some() { 26.0 } else { 0.0 };
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(tw + extra + DP16 * 2.0, BUTTON_HEIGHT),
@@ -169,9 +184,14 @@ pub fn filled_button(
     let (hover_t, press_t) = motion::interaction(ui, &response);
     let scale = motion::press_scale_at(press_t);
     let draw = Rect::from_center_size(rect.center(), rect.size() * scale);
-    let fill = motion::state_layer_at(app_theme.scheme.primary, hover_t, press_t);
-    ui.painter().rect_filled(draw, 20, fill);
-    let fg = app_theme.scheme.on_primary;
+    // egui corner radii are u8, so the full pill is 255 rather than 999.
+    let radius = u8::MAX;
+    let fill = app_theme.scheme.on_surface.lerp_to_gamma(
+        app_theme.scheme.surface_container_highest,
+        hover_t * 0.12 + press_t * 0.2,
+    );
+    ui.painter().rect_filled(draw, radius, fill);
+    let fg = app_theme.scheme.surface;
     let content_w = tw + extra;
     let start = draw.center().x - content_w / 2.0;
     if let Some(icon_name) = icon_name {
@@ -184,9 +204,9 @@ pub fn filled_button(
         );
     }
     let text_center = Pos2::new(start + extra + tw / 2.0, draw.center().y);
-    paint_centered_line(ui.painter(), text_center, label, font, fg);
-    motion::focus_ring(ui, draw, 20, &response);
-    response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
+    paint_centered_line(ui.painter(), text_center, &label, font, fg);
+    motion::focus_ring(ui, draw, radius, &response);
+    response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
     response
 }
 
@@ -196,47 +216,51 @@ pub const BUTTON_HEIGHT: f32 = TOUCH;
 /// Width of a [`filled_button`] with `label`, for centring action rows.
 pub fn filled_button_width(painter: &egui::Painter, label: &str, icon: bool) -> f32 {
     let extra = if icon { 26.0 } else { 0.0 };
-    text_width(painter, label, medium_font(LABEL_LARGE)) + extra + DP16 * 2.0
+    text_width(painter, &label.to_uppercase(), font_label(12.0)) + extra + DP16 * 2.0
 }
 
 /// Width of an [`outlined_button`] with `label`, for centring action rows.
 pub fn outlined_button_width(painter: &egui::Painter, label: &str) -> f32 {
-    text_width(painter, label, medium_font(LABEL_LARGE)) + DP16 * 2.0
+    text_width(painter, &label.to_uppercase(), font_label(12.0)) + DP16 * 2.0
 }
 
-/// Outlined pill button ("Play all"), same height as [`filled_button`].
+/// Outlined secondary button: a pill with a hairline frame and no fill.
 pub fn outlined_button(ui: &mut Ui, app_theme: &Theme, label: &str) -> Response {
-    let font = medium_font(LABEL_LARGE);
-    let tw = text_width(ui.painter(), label, font.clone());
+    let label = label.to_uppercase();
+    let font = font_label(12.0);
+    let tw = text_width(ui.painter(), &label, font.clone());
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(tw + DP16 * 2.0, BUTTON_HEIGHT), Sense::click());
     let (hover_t, press_t) = motion::interaction(ui, &response);
-    let fill = app_theme
-        .bg()
-        .lerp_to_gamma(app_theme.scheme.surface_container_high, hover_t);
     let scale = motion::press_scale_at(press_t);
     let draw = Rect::from_center_size(rect.center(), rect.size() * scale);
-    let rounding = (BUTTON_HEIGHT * 0.5) as u8;
-    ui.painter().rect_filled(draw, rounding, fill);
-    ui.painter().rect_stroke(
-        draw,
-        rounding,
-        Stroke::new(1.0, app_theme.scheme.outline),
-        StrokeKind::Inside,
-    );
+    let radius = u8::MAX;
+    let t = hover_t.max(press_t);
+    if t > 0.0 {
+        ui.painter().rect_filled(
+            draw,
+            radius,
+            app_theme
+                .scheme
+                .surface_container_high
+                .gamma_multiply(t * 0.85),
+        );
+    }
+    ui.painter()
+        .rect_stroke(draw, radius, app_theme.hairline(), StrokeKind::Inside);
     paint_centered_line(
         ui.painter(),
         draw.center(),
-        label,
+        &label,
         font,
         app_theme.scheme.on_surface,
     );
-    motion::focus_ring(ui, draw, rounding, &response);
-    response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
+    motion::focus_ring(ui, draw, radius, &response);
+    response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
     response
 }
 
-/// Section title with optional "Play all" pill.
+/// Section label with optional "Play all" pill.
 pub fn section_header(
     ui: &mut Ui,
     app_theme: &Theme,
@@ -248,15 +272,15 @@ pub fn section_header(
     text(
         ui.painter(),
         rect.left_top() + Vec2::new(0.0, DP8),
-        title,
-        bold_font(TITLE_LARGE),
-        app_theme.scheme.on_surface,
+        &title.to_uppercase(),
+        font_label(12.0),
+        app_theme.scheme.on_surface_variant,
     );
     if !play_all {
         return None;
     }
-    let label = "Play all";
-    let font = medium_font(LABEL_LARGE);
+    let label = "PLAY ALL";
+    let font = font_label(11.0);
     let tw = text_width(ui.painter(), label, font.clone());
     let button_rect = Rect::from_min_size(
         Pos2::new(rect.right() - (tw + DP20 * 2.0), rect.top() + DP8),
@@ -268,18 +292,22 @@ pub fn section_header(
         Sense::click(),
     );
     let (hover_t, press_t) = motion::interaction(ui, &response);
-    let fill = app_theme
-        .bg()
-        .lerp_to_gamma(app_theme.scheme.surface_container_high, hover_t);
     let scale = motion::press_scale_at(press_t);
     let draw = Rect::from_center_size(button_rect.center(), button_rect.size() * scale);
-    ui.painter().rect_filled(draw, 16, fill);
-    ui.painter().rect_stroke(
-        draw,
-        16,
-        Stroke::new(1.0, app_theme.scheme.outline),
-        StrokeKind::Inside,
-    );
+    let radius = u8::MAX;
+    let t = hover_t.max(press_t);
+    if t > 0.0 {
+        ui.painter().rect_filled(
+            draw,
+            radius,
+            app_theme
+                .scheme
+                .surface_container_high
+                .gamma_multiply(t * 0.85),
+        );
+    }
+    ui.painter()
+        .rect_stroke(draw, radius, app_theme.hairline(), StrokeKind::Inside);
     paint_centered_line(
         ui.painter(),
         draw.center(),
@@ -287,57 +315,13 @@ pub fn section_header(
         font,
         app_theme.scheme.on_surface,
     );
-    motion::focus_ring(ui, draw, 16, &response);
+    motion::focus_ring(ui, draw, radius, &response);
     response
         .widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, format!("Play all {title}")));
     Some(response)
 }
 
-/// Bottom-nav / rail item: selected pill + 24 dp icon + label.
-pub fn nav_item(
-    ui: &mut Ui,
-    app_theme: &Theme,
-    icon_name: &str,
-    label: &str,
-    selected: bool,
-    size: Vec2,
-) -> Response {
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let center_x = rect.center().x;
-    let pill_center = Pos2::new(center_x, rect.top() + 24.0);
-    let selected_t = motion::t(ui, response.id.with("selected"), selected, motion::SELECT);
-    let pill = Rect::from_center_size(pill_center, motion::nav_pill(selected_t));
-    let (hover_t, press_t) = motion::interaction(ui, &response);
-    if selected_t > 0.0 || hover_t > 0.0 || press_t > 0.0 {
-        let base = app_theme
-            .bg()
-            .lerp_to_gamma(app_theme.scheme.secondary_container, selected_t);
-        ui.painter()
-            .rect_filled(pill, 16, motion::state_layer_at(base, hover_t, press_t));
-    }
-    let icon_color = app_theme
-        .scheme
-        .on_surface_variant
-        .lerp_to_gamma(app_theme.scheme.on_secondary_container, selected_t);
-    paint_icon(ui.painter(), pill_center, icon_name, 24.0, icon_color);
-    let label_color = app_theme
-        .scheme
-        .on_surface_variant
-        .lerp_to_gamma(app_theme.scheme.on_surface, selected_t);
-    let galley =
-        ui.painter()
-            .layout_no_wrap(label.to_owned(), medium_font(BODY_SMALL), label_color);
-    ui.painter().galley(
-        Pos2::new(center_x - galley.size().x / 2.0, rect.top() + 46.0),
-        galley,
-        label_color,
-    );
-    motion::focus_ring(ui, rect, 16, &response);
-    response.widget_info(|| WidgetInfo::selected(egui::Role::Tab, true, selected, label));
-    response
-}
-
-/// M3 seek slider (4 dp track, 12 dp thumb).
+/// Seek slider: 2 dp line with a 12×12 thumb.
 pub fn slider(
     ui: &mut Ui,
     app_theme: &Theme,
@@ -347,7 +331,7 @@ pub fn slider(
     label: &str,
 ) -> Response {
     let (rect, mut response) =
-        ui.allocate_exact_size(Vec2::new(width, DP32), Sense::click_and_drag());
+        ui.allocate_exact_size(Vec2::new(width, TOUCH), Sense::click_and_drag());
     let min = *range.start();
     let max = *range.end();
     if max > min && (response.is_pointer_button_down_on() || response.clicked()) {
@@ -367,23 +351,16 @@ pub fn slider(
     } else {
         0.0
     };
-    let track = Rect::from_center_size(rect.center(), Vec2::new(rect.width() - 16.0, 4.0));
+    let track = Rect::from_center_size(rect.center(), Vec2::new(rect.width() - 16.0, 2.0));
     let painter = ui.painter();
-    painter.rect_filled(track, 2, app_theme.scheme.surface_container_highest);
+    painter.rect_filled(track, 0, app_theme.scheme.surface_container_highest);
     let active = Rect::from_min_size(
         track.left_top(),
         Vec2::new(track.width() * value_norm, track.height()),
     );
-    painter.rect_filled(active, 2, app_theme.scheme.primary);
+    painter.rect_filled(active, 0, app_theme.scheme.on_surface);
     let thumb_center = Pos2::new(track.left() + track.width() * value_norm, rect.center().y);
-    let hover_t = motion::t(
-        ui,
-        response.id.with("thumb"),
-        response.hovered() || response.dragged(),
-        motion::HOVER,
-    );
-    let thumb_radius = motion::lerp(6.0, 7.0, hover_t);
-    painter.circle_filled(thumb_center, thumb_radius, app_theme.scheme.primary);
+    painter.circle_filled(thumb_center, 6.0, app_theme.scheme.on_surface);
     response.widget_info(|| {
         WidgetInfo::labeled(egui::Role::Slider, true, format!("{label} {value_norm:.2}"))
     });
@@ -416,10 +393,10 @@ pub fn progress_slider(
     width: f32,
 ) -> ProgressSliderResponse {
     let (rect, mut response) =
-        ui.allocate_exact_size(Vec2::new(width, DP32), Sense::click_and_drag());
+        ui.allocate_exact_size(Vec2::new(width, TOUCH), Sense::click_and_drag());
     let track = Rect::from_center_size(
         rect.center(),
-        Vec2::new((rect.width() - 16.0).max(1.0), 4.0),
+        Vec2::new((rect.width() - 16.0).max(1.0), 2.0),
     );
     let pointer = ui.input(|input| input.pointer.interact_pos());
     let dragging = response.is_pointer_button_down_on();
@@ -461,32 +438,25 @@ pub fn progress_slider(
     }
 
     let painter = ui.painter();
-    painter.rect_filled(track, 2, app_theme.scheme.surface_container_highest);
+    painter.rect_filled(track, 0, app_theme.scheme.surface_container_high);
     if buffering {
         let pulse = progress_pulse(ui.input(|input| input.time) as f32);
         painter.rect_filled(
             track,
-            2,
+            0,
             app_theme
                 .scheme
-                .primary
-                .linear_multiply(0.10 + 0.18 * pulse),
+                .surface_container_highest
+                .lerp_to_gamma(app_theme.scheme.on_surface_variant, 0.25 + 0.35 * pulse),
         );
     }
     let active = Rect::from_min_size(
         track.left_top(),
         Vec2::new(track.width() * shown, track.height()),
     );
-    painter.rect_filled(active, 2, app_theme.scheme.primary);
+    painter.rect_filled(active, 0, app_theme.scheme.on_surface);
     let thumb_center = Pos2::new(track.left() + track.width() * shown, rect.center().y);
-    let hover_t = motion::t(
-        ui,
-        response.id.with("thumb"),
-        response.hovered() || dragging,
-        motion::HOVER,
-    );
-    let thumb_radius = motion::lerp(6.0, 9.0, hover_t);
-    painter.circle_filled(thumb_center, thumb_radius, app_theme.scheme.primary);
+    painter.circle_filled(thumb_center, 6.0, app_theme.scheme.on_surface);
 
     let hover_preview = if (response.hovered() || dragging) && duration_ms > 0 {
         pointer.map(|pointer| {
@@ -498,7 +468,7 @@ pub fn progress_slider(
     };
     if let Some((pointer, preview_ms)) = hover_preview {
         let label = format_position(preview_ms);
-        let font = regular_font(11.0);
+        let font = font_label(11.0);
         let bubble = Vec2::new(text_width(painter, &label, font.clone()) + 16.0, 22.0);
         let left = (pointer.x - bubble.x / 2.0)
             .clamp(rect.left(), (rect.right() - bubble.x).max(rect.left()));
@@ -506,13 +476,8 @@ pub fn progress_slider(
             Pos2::new(left, (rect.top() - bubble.y - 6.0).max(0.0)),
             bubble,
         );
-        painter.rect_filled(bubble_rect, 6, app_theme.scheme.surface_container_high);
-        painter.rect_stroke(
-            bubble_rect,
-            6,
-            Stroke::new(1.0, app_theme.scheme.outline),
-            StrokeKind::Inside,
-        );
+        painter.rect_filled(bubble_rect, 0, app_theme.scheme.surface_container_high);
+        painter.rect_stroke(bubble_rect, 0, app_theme.hairline(), StrokeKind::Inside);
         let galley = painter.layout_no_wrap(label, font, app_theme.scheme.on_surface);
         painter.galley(
             bubble_rect.center() - galley.size() / 2.0,
@@ -553,32 +518,7 @@ pub fn filled_icon_button(
         rect.center(),
         icon_name,
         size * 0.5 * scale,
-        app_theme.scheme.on_primary,
-    );
-    response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
-    response
-}
-
-/// Filled icon button that crossfades `from` to `to` at `mix` (play/pause).
-pub fn filled_icon_button_swap(
-    ui: &mut Ui,
-    app_theme: &Theme,
-    from: &str,
-    to: &str,
-    mix: f32,
-    label: &str,
-    size: f32,
-) -> Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
-    let scale = paint_filled_face(ui, app_theme, &response, rect, size);
-    paint_icon_swap(
-        ui.painter(),
-        rect.center(),
-        from,
-        to,
-        mix,
-        size * 0.5 * scale,
-        app_theme.scheme.on_primary,
+        app_theme.scheme.surface,
     );
     response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
     response
@@ -594,7 +534,10 @@ fn paint_filled_face(
 ) -> f32 {
     let (hover_t, press_t) = motion::interaction(ui, response);
     let scale = motion::press_scale_at(press_t);
-    let fill = motion::state_layer_at(app_theme.scheme.primary, hover_t, press_t);
+    let fill = app_theme.scheme.on_surface.lerp_to_gamma(
+        app_theme.scheme.surface_container_highest,
+        hover_t * 0.12 + press_t * 0.2,
+    );
     ui.painter()
         .circle_filled(rect.center(), size * 0.5 * scale, fill);
     motion::focus_ring(ui, rect, (size * 0.5) as u8, response);

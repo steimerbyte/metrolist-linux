@@ -63,13 +63,21 @@ pub fn sleep_window_contains(now_minutes: u32, start_minutes: u32, end_minutes: 
 
 /// `start == end` means the whole day, for every `now`.
 
-pub open spec fn clear_stream_mute_spec(allow_unmute: bool, intended_muted: bool) -> bool {
-    allow_unmute && !intended_muted
+pub open spec fn clear_stream_mute_spec(
+    ao_open: bool,
+    allow_unmute: bool,
+    intended_muted: bool,
+) -> bool {
+    ao_open && allow_unmute && !intended_muted
 }
 
-pub fn should_clear_stream_mute(allow_unmute: bool, intended_muted: bool) -> (r: bool)
-    ensures r == clear_stream_mute_spec(allow_unmute, intended_muted),
+pub fn should_clear_stream_mute(
+    ao_open: bool,
+    allow_unmute: bool,
+    intended_muted: bool,
+) -> (r: bool)
+    ensures r == clear_stream_mute_spec(ao_open, allow_unmute, intended_muted),
 {
-    allow_unmute && !intended_muted
+    ao_open && allow_unmute && !intended_muted
 }
 } // verus!

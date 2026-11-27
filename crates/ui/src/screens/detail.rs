@@ -9,7 +9,8 @@ use crate::art::ArtCache;
 use crate::services::Services;
 use crate::state::{PageData, PageState};
 use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8, TITLE_LARGE, TOUCH,
+    font_label, medium_font, regular_font, Theme, BODY_MEDIUM, DP12, DP16, DP24, DP4, DP8,
+    HEADLINE_SMALL, LABEL_SMALL, SHAPE_LARGE, TOUCH,
 };
 use crate::widgets::{
     elided, filled_button, filled_button_width, icon_button, outlined_button,
@@ -31,7 +32,7 @@ pub fn show(
     let mut playlist_order = page.sort;
 
     if page.data.initial_loading() {
-        crate::widgets::shimmer(ui, theme, Vec2::new(160.0, 160.0), 8);
+        crate::widgets::shimmer(ui, theme, Vec2::new(160.0, 160.0), SHAPE_LARGE);
         ui.add_space(DP12);
         skeleton_rows(ui, theme, width);
         ui.add_space(DP24);
@@ -237,6 +238,7 @@ fn header(
     meta: &str,
     width: f32,
 ) -> HeaderActions {
+    let meta = meta.to_uppercase();
     let url = if thumbnail_url.is_empty() {
         String::new()
     } else {
@@ -255,30 +257,38 @@ fn header(
     if width >= 560.0 {
         ui.horizontal_top(|ui| {
             let (art_rect, _) = ui.allocate_exact_size(Vec2::splat(art_size), egui::Sense::hover());
-            crate::widgets::art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 8);
+            crate::widgets::art_or_placeholder(ui, theme, texture.as_ref(), art_rect, SHAPE_LARGE);
+            ui.painter().rect_stroke(
+                art_rect,
+                SHAPE_LARGE,
+                theme.hairline(),
+                egui::StrokeKind::Inside,
+            );
             ui.add_space(DP16);
             ui.vertical(|ui| {
-                ui.set_width((width - art_size - 24.0).max(120.0));
+                ui.set_width((width - art_size - DP24).max(120.0));
                 ui.spacing_mut().item_spacing.y = DP4;
                 let text_width = ui.available_width();
-                let (title_rect, _) =
-                    ui.allocate_exact_size(Vec2::new(text_width, 28.0), egui::Sense::hover());
+                let (title_rect, _) = ui.allocate_exact_size(
+                    Vec2::new(text_width, HEADLINE_SMALL + DP4),
+                    egui::Sense::hover(),
+                );
                 elided(
                     ui.painter(),
                     title_rect.left_top(),
                     title,
-                    bold_font(TITLE_LARGE),
+                    medium_font(HEADLINE_SMALL),
                     theme.scheme.on_surface,
                     text_width,
                 );
                 ui.label(
                     egui::RichText::new(subtitle)
-                        .font(medium_font(14.0))
+                        .font(regular_font(BODY_MEDIUM))
                         .color(theme.scheme.on_surface_variant),
                 );
                 ui.label(
-                    egui::RichText::new(meta)
-                        .font(regular_font(12.0))
+                    egui::RichText::new(meta.as_str())
+                        .font(font_label(LABEL_SMALL))
                         .color(theme.scheme.on_surface_variant),
                 );
                 ui.add_space(DP8);
@@ -293,22 +303,28 @@ fn header(
     } else {
         ui.vertical_centered(|ui| {
             let (art_rect, _) = ui.allocate_exact_size(Vec2::splat(art_size), egui::Sense::hover());
-            crate::widgets::art_or_placeholder(ui, theme, texture.as_ref(), art_rect, 8);
+            crate::widgets::art_or_placeholder(ui, theme, texture.as_ref(), art_rect, SHAPE_LARGE);
+            ui.painter().rect_stroke(
+                art_rect,
+                SHAPE_LARGE,
+                theme.hairline(),
+                egui::StrokeKind::Inside,
+            );
             ui.add_space(DP12);
             ui.spacing_mut().item_spacing.y = DP4;
             ui.label(
                 egui::RichText::new(title)
-                    .font(bold_font(22.0))
+                    .font(medium_font(HEADLINE_SMALL))
                     .color(theme.scheme.on_surface),
             );
             ui.label(
                 egui::RichText::new(subtitle)
-                    .font(medium_font(14.0))
+                    .font(regular_font(BODY_MEDIUM))
                     .color(theme.scheme.on_surface_variant),
             );
             ui.label(
-                egui::RichText::new(meta)
-                    .font(regular_font(12.0))
+                egui::RichText::new(meta.as_str())
+                    .font(font_label(LABEL_SMALL))
                     .color(theme.scheme.on_surface_variant),
             );
             ui.add_space(DP8);
@@ -340,7 +356,7 @@ fn header(
 /// fold); the expand flag lives in egui memory so the screen stays stateless.
 fn description_block(ui: &mut Ui, theme: &Theme, width: f32, id: &str, text: &str) {
     const COLLAPSED_LINES: f32 = 3.0;
-    let font = regular_font(13.0);
+    let font = regular_font(BODY_MEDIUM);
     let color = theme.scheme.on_surface_variant;
     let row_height = ui.ctx().fonts_mut(|fonts| fonts.row_height(&font));
     let galley = ui

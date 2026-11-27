@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/boot",
     "crates/core",
     "crates/innertube",
     "crates/lyrics",
@@ -24,6 +25,7 @@ authors = ["Metrolist Linux contributors"]
 [workspace.dependencies]
 # Internal crates
 ml-core = { path = "crates/core" }
+ml-boot = { path = "crates/boot" }
 ml-innertube = { path = "crates/innertube" }
 ml-lyrics = { path = "crates/lyrics" }
 ml-store = { path = "crates/store" }
@@ -36,7 +38,6 @@ ml-integrations = { path = "crates/integrations" }
 # UI
 eframe = "0.37"
 egui = "0.37"
-material-colors = "0.5"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 
 # Networking / async

@@ -2,10 +2,11 @@
 
 use eframe::egui::{self, Align, Layout, Pos2, Rect, Sense, Ui, Vec2};
 
-use crate::motion;
 use crate::pure::{download_click, download_hint, download_icon, DownloadBadge, DownloadClick};
 use crate::services::Services;
-use crate::theme::{bold_font, medium_font, regular_font, Theme, DP12, DP4};
+use crate::theme::{
+    font_label, medium_font, regular_font, Theme, DP12, DP4, HEADLINE_SMALL, LABEL_SMALL, TOUCH,
+};
 use crate::widgets::{icon_button_at, outlined_button, paint_icon, playing_bars, text, text_width};
 use ml_core::{format_duration_opt, Song};
 
@@ -40,18 +41,18 @@ pub fn show_modal(
         let (header, _) = ui.allocate_exact_size(Vec2::new(width, 40.0), Sense::hover());
         text(
             ui.painter(),
-            header.left_top() + Vec2::new(2.0, 5.0),
+            Pos2::new(header.left() + 2.0, header.center().y - 14.0),
             "Queue",
-            bold_font(crate::theme::TITLE_LARGE),
+            medium_font(HEADLINE_SMALL),
             app_theme.scheme.on_surface,
         );
-        let count = format!("{} tracks", songs.len());
-        let count_width = text_width(ui.painter(), &count, regular_font(12.0));
+        let count = format!("{} TRACKS", songs.len());
+        let count_width = text_width(ui.painter(), &count, font_label(LABEL_SMALL));
         text(
             ui.painter(),
-            Pos2::new(header.right() - 48.0 - count_width, header.center().y - 8.0),
+            Pos2::new(header.right() - 56.0 - count_width, header.center().y - 6.0),
             &count,
-            regular_font(12.0),
+            font_label(LABEL_SMALL),
             app_theme.scheme.on_surface_variant,
         );
         let close = icon_button_at(
@@ -59,8 +60,8 @@ pub fn show_modal(
             app_theme,
             "queue_close",
             Rect::from_center_size(
-                Pos2::new(header.right() - 20.0, header.center().y),
-                Vec2::splat(40.0),
+                Pos2::new(header.right() - 24.0, header.center().y),
+                Vec2::splat(TOUCH),
             ),
             "close",
             "Close queue",
@@ -153,15 +154,22 @@ fn queue_rows(
         let (rect, row) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_HEIGHT), Sense::click());
         let active = position == Some(index);
-        let active_t = motion::t(ui, row.id.with("active"), active, motion::HOVER);
-        let (hover_t, press_t) = motion::interaction(ui, &row);
-        if active_t > 0.0 || hover_t > 0.0 || press_t > 0.0 {
-            let base = app_theme
-                .bg()
-                .lerp_to_gamma(app_theme.scheme.surface_container_high, active_t);
+        if row.hovered() {
             ui.painter()
-                .rect_filled(rect, 8, motion::state_layer_at(base, hover_t, press_t));
+                .rect_filled(rect, 0, app_theme.scheme.surface_container_high);
         }
+        if active {
+            ui.painter().rect_filled(
+                Rect::from_min_size(rect.min, Vec2::new(2.0, rect.height())),
+                0,
+                app_theme.scheme.on_surface,
+            );
+        }
+        // 1 px row rule plus a hard 2 px selection line: no pills, no radii.
+        ui.painter().line_segment(
+            [rect.left_bottom(), rect.right_bottom()],
+            app_theme.hairline(),
+        );
         if active {
             playing_bars(
                 ui,
@@ -174,16 +182,16 @@ fn queue_rows(
             );
         } else {
             let number = format!("{}", index + 1);
-            let number_width = text_width(ui.painter(), &number, regular_font(12.0));
+            let number_width = text_width(ui.painter(), &number, font_label(LABEL_SMALL));
             text(
                 ui.painter(),
                 Pos2::new(
                     rect.left() + 20.0 - number_width / 2.0,
-                    rect.center().y - 8.0,
+                    rect.center().y - 7.0,
                 ),
                 &number,
-                regular_font(12.0),
-                app_theme.scheme.outline,
+                font_label(LABEL_SMALL),
+                app_theme.scheme.on_surface_variant,
             );
         }
 
@@ -209,7 +217,7 @@ fn queue_rows(
         };
         crate::widgets::elided(
             ui.painter(),
-            Pos2::new(text_x, rect.top() + 28.0),
+            Pos2::new(text_x, rect.top() + ROW_HEIGHT / 2.0),
             &subtitle,
             regular_font(12.0),
             app_theme.scheme.on_surface_variant,
@@ -229,8 +237,10 @@ fn queue_rows(
         let disabled = app_theme.scheme.on_surface.gamma_multiply(0.38);
         let badge = services.download_badge(&song.id);
         let badge_color = match badge {
-            DownloadBadge::Completed => app_theme.scheme.primary,
-            DownloadBadge::Failed => app_theme.scheme.error,
+            DownloadBadge::Completed => app_theme.scheme.success,
+            // Several failed rows can coexist, so this stays a warning tone:
+            // red is reserved for the single interrupt per screen.
+            DownloadBadge::Failed => app_theme.scheme.warning,
             _ => muted,
         };
         let download = icon(

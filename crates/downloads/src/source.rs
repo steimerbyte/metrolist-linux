@@ -1,15 +1,15 @@
 //! The byte source the manager downloads through.
 //!
-//! Production uses [`ml_innertube::InnertubeClient`] (VISIONOS ranged 206
-//! requests, `arch/pot-notes.md` §2). Tests implement this trait with a fake,
-//! so the queue/state machine is exercised without a network.
+//! The trait lives here; the production implementation is a newtype in the
+//! composition root (`ml-ui::audio_source::InnerTubeAudioSource`), because no
+//! module may import another module's crate. Tests implement this trait with a
+//! fake, so the queue/state machine is exercised without a network.
 
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 
 use ml_core::{AudioQuality, MlResult, StreamInfo};
-use ml_innertube::InnertubeClient;
 
 /// Boxed future alias (the trait must stay object-safe for `Arc<dyn AudioSource>`).
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -38,24 +38,4 @@ pub trait AudioSource: Send + Sync {
         path: &'a Path,
         progress: ProgressFn<'a>,
     ) -> BoxFuture<'a, MlResult<()>>;
-}
-
-impl AudioSource for InnertubeClient {
-    fn resolve<'a>(
-        &'a self,
-        video_id: &'a str,
-        quality: AudioQuality,
-    ) -> BoxFuture<'a, MlResult<StreamInfo>> {
-        Box::pin(async move { self.stream_info(video_id, quality).await })
-    }
-
-    fn fetch<'a>(
-        &'a self,
-        video_id: &'a str,
-        quality: AudioQuality,
-        path: &'a Path,
-        progress: ProgressFn<'a>,
-    ) -> BoxFuture<'a, MlResult<()>> {
-        Box::pin(async move { self.download_audio(video_id, quality, path, progress).await })
-    }
 }

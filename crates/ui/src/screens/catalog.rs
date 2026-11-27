@@ -10,13 +10,11 @@ use crate::art::ArtCache;
 use crate::routes::Route;
 use crate::services::Services;
 use crate::state::{item_route, item_song, item_subtitle, item_thumb, section_songs, Load};
-use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8, GRID_GAP, TITLE_LARGE,
-    TITLE_MEDIUM,
-};
+use crate::theme::fonts::{font_bold, font_label, font_medium, font_regular};
+use crate::theme::{Theme, DP12, DP16, DP24, DP4, DP8, GRID_GAP, SHAPE_LARGE, TITLE_LARGE};
 use crate::widgets::{
-    album_card, art_or_placeholder, chip, empty_state, filled_button, section_header, song_row,
-    SongRowOptions,
+    album_card, art_or_placeholder, chip, divider, empty_state, filled_button, section_header,
+    song_row, SongRowOptions,
 };
 
 use super::{
@@ -35,9 +33,9 @@ fn direct(intents: Vec<Intent>) -> Vec<Intent> {
 
 fn section_title(title: &str, count: usize) -> String {
     if title.is_empty() {
-        format!("{count} items")
+        format!("{count} ITEMS")
     } else {
-        format!("{title} · {count}")
+        format!("{title} · {count}").to_ascii_uppercase()
     }
 }
 
@@ -307,13 +305,13 @@ pub fn moods(ui: &mut Ui, theme: &Theme, page: &Load<MoodsAndGenres>, width: f32
         }
         ui.add_space(DP4);
         ui.label(
-            egui::RichText::new(&group.title)
-                .font(bold_font(TITLE_MEDIUM))
+            egui::RichText::new(group.title.to_ascii_uppercase())
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface),
         );
         ui.label(
-            egui::RichText::new(format!("{} categories", group.items.len()))
-                .font(regular_font(12.0))
+            egui::RichText::new(format!("{} CATEGORIES", group.items.len()))
+                .font(font_label(11.0))
                 .color(theme.scheme.on_surface_variant),
         );
         ui.add_space(DP8);
@@ -356,6 +354,9 @@ fn episode_rows(
     let mut intents = Vec::new();
     let songs: Vec<Song> = episodes.iter().map(episode_song).collect();
     for (index, song) in songs.iter().enumerate() {
+        if index > 0 {
+            divider(ui, theme);
+        }
         let url = song.thumb(160);
         let texture = art.texture(ui.ctx(), services, &url);
         let active = current.is_some_and(|c| c.id == song.id);
@@ -437,15 +438,16 @@ pub fn podcasts(
     }
     ui.add_space(DP4);
     ui.label(
-        egui::RichText::new("New episodes")
-            .font(bold_font(TITLE_LARGE))
+        egui::RichText::new("NEW EPISODES")
+            .font(font_label(11.0))
             .color(theme.scheme.on_surface),
     );
+    divider(ui, theme);
     ui.label(
         egui::RichText::new(
             "Subscribed shows need an account; anonymous browsing lists new episodes only.",
         )
-        .font(regular_font(12.0))
+        .font(font_regular(12.0))
         .color(theme.scheme.on_surface_variant),
     );
     for section in &feed.sections {
@@ -512,26 +514,26 @@ pub fn podcast(
     ui.horizontal_top(|ui| {
         let art_size = if width >= 560.0 { 160.0 } else { 120.0 };
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(art_size), egui::Sense::hover());
-        art_or_placeholder(ui, theme, texture.as_ref(), rect, 8);
+        art_or_placeholder(ui, theme, texture.as_ref(), rect, SHAPE_LARGE);
         ui.add_space(DP16);
         ui.vertical(|ui| {
             ui.set_width((width - art_size - DP16).max(120.0));
             ui.label(
                 egui::RichText::new(&show.title)
-                    .font(bold_font(TITLE_LARGE))
+                    .font(font_bold(TITLE_LARGE))
                     .color(theme.scheme.on_surface),
             );
             if let Some(author) = &show.author {
                 ui.label(
                     egui::RichText::new(&author.name)
-                        .font(medium_font(14.0))
+                        .font(font_medium(14.0))
                         .color(theme.scheme.on_surface_variant),
                 );
             }
             if let Some(count) = &show.song_count_text {
                 ui.label(
                     egui::RichText::new(count)
-                        .font(regular_font(12.0))
+                        .font(font_label(11.0))
                         .color(theme.scheme.on_surface_variant),
                 );
             }
@@ -549,15 +551,15 @@ pub fn podcast(
             ui.add_space(DP12);
             ui.label(
                 egui::RichText::new(description)
-                    .font(regular_font(13.0))
+                    .font(font_regular(13.0))
                     .color(theme.scheme.on_surface_variant),
             );
         }
     }
     ui.add_space(DP12);
     ui.label(
-        egui::RichText::new(format!("{} episodes", data.episodes.len()))
-            .font(medium_font(13.0))
+        egui::RichText::new(format!("{} EPISODES", data.episodes.len()))
+            .font(font_label(11.0))
             .color(theme.scheme.on_surface),
     );
     intents.extend(episode_rows(
@@ -635,6 +637,7 @@ mod tests {
 
     fn section(title: &str, kind: SectionKind, items: Vec<YtItem>) -> HomeSection {
         HomeSection {
+            id: Some(format!("section-{title}")),
             title: title.to_string(),
             items,
             continuation: None,

@@ -80,7 +80,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<RunOptions, String> 
             "--click" => options.click = true,
             "--demo" => {
                 let value = args.next().ok_or_else(|| {
-                    "--demo needs player|queue|lyrics|library|settings|settings-audio|history|liked|downloads|account|charts|moods|new-releases|podcasts|stats|wrapped|recognize|recognize-listening|recognize-success|recognize-error|integrations|integrations-connected|integrations-error|together|together-connected|together-guest"
+                    "--demo needs player|loading|queue|lyrics|library|settings|settings-audio|history|liked|downloads|account|charts|moods|new-releases|podcasts|stats|wrapped|recognize|recognize-listening|recognize-success|recognize-error|integrations|integrations-connected|integrations-error|together|together-connected|together-guest"
                         .to_string()
                 })?;
                 options.demo = Some(
@@ -105,7 +105,7 @@ Usage:
   metrolist --smoke [FRAMES]           # CI smoke test, default 120 frames
   metrolist --screenshot PATH [WIDTH] [HEIGHT]   # default 405x900
   metrolist --screenshot PATH --pointer X Y [--click]  # docs hover/click frames
-  metrolist --screenshot PATH --demo player|player-paused|queue|lyrics|library|settings|settings-audio|history|liked|downloads|account|charts|moods|new-releases|podcasts|stats|wrapped|recognize|recognize-listening|recognize-success|recognize-error|integrations|integrations-connected|integrations-error|together|together-connected|together-guest
+  metrolist --screenshot PATH --demo player|player-paused|loading|queue|lyrics|library|settings|settings-audio|history|liked|downloads|account|charts|moods|new-releases|podcasts|stats|wrapped|recognize|recognize-listening|recognize-success|recognize-error|integrations|integrations-connected|integrations-error|together|together-connected|together-guest
   metrolist --demo together           # Listen Together lobby
   metrolist --demo player               # interactive sample playback
   metrolist --help

@@ -23,7 +23,7 @@ pub mod settings;
 pub mod stats;
 pub mod together;
 
-use eframe::egui::{self, Align, Align2, Layout, Pos2, Sense, Ui, Vec2};
+use eframe::egui::{self, Align, Align2, Layout, Sense, StrokeKind, Ui, Vec2};
 use ml_core::{QueueSource, Song, YtItem};
 
 use crate::art::ArtCache;
@@ -34,12 +34,9 @@ use crate::services::Services;
 use crate::state::{
     item_route, item_song, item_subtitle, item_thumb, section_songs, song_artist_id,
 };
-use crate::theme::{
-    medium_font, regular_font, Theme, DP16, DP32, DP4, DP8, GRID_GAP, LABEL_LARGE, SHAPE_SMALL,
-    TOUCH,
-};
+use crate::theme::{font_label, Theme, DP16, DP32, DP4, DP8, GRID_GAP, SHAPE_LARGE, TOUCH};
 use crate::widgets::{
-    album_card, empty_state, filled_button, outlined_button, paint_icon, shimmer, shimmer_row,
+    album_card, divider, empty_state, filled_button, outlined_button, shimmer, shimmer_row,
     song_row, text_width, SongRowOptions,
 };
 
@@ -150,25 +147,21 @@ pub fn sort_menu<T: Copy + PartialEq>(
     if !options.contains(selected) {
         *selected = first;
     }
-    let text = format!("Sort: {}", label(*selected));
-    let font = medium_font(LABEL_LARGE);
+    let text = format!("Sort: {}", label(*selected)).to_uppercase();
+    let font = font_label(11.0);
     let text_width = text_width(ui.painter(), &text, font.clone());
-    let width = (text_width + 16.0 + 32.0).min(ui.available_width());
+    let width = (text_width + DP16 * 2.0).min(ui.available_width());
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, DP32), Sense::click());
-    let fill = motion::state_layer(ui, theme.scheme.surface_container_high, &response);
-    ui.painter().rect_filled(rect, SHAPE_SMALL, fill);
+    let fill = motion::state_layer(ui, theme.scheme.surface, &response);
+    let radius = (DP32 * 0.5) as u8;
+    ui.painter().rect_filled(rect, radius, fill);
+    ui.painter()
+        .rect_stroke(rect, radius, theme.hairline(), StrokeKind::Inside);
     ui.painter().text(
-        Pos2::new(rect.left() + 12.0, rect.center().y),
-        Align2::LEFT_CENTER,
+        rect.center(),
+        Align2::CENTER_CENTER,
         &text,
         font,
-        theme.scheme.on_surface,
-    );
-    paint_icon(
-        ui.painter(),
-        Pos2::new(rect.right() - 14.0, rect.center().y),
-        "keyboard_arrow_down",
-        18.0,
         theme.scheme.on_surface_variant,
     );
     response.widget_info(|| {
@@ -187,7 +180,8 @@ pub fn sort_menu<T: Copy + PartialEq>(
             ui.set_min_width(width.max(160.0));
             for &option in options {
                 let current = *selected == option;
-                if ui.selectable_label(current, label(option)).clicked() && !current {
+                let text = label(option).to_uppercase();
+                if ui.selectable_label(current, text).clicked() && !current {
                     *selected = option;
                 }
             }
@@ -214,6 +208,15 @@ pub fn measured_column<R>(ui: &mut Ui, max_width: f32, add: impl FnOnce(&mut Ui)
     .inner
 }
 
+/// Left rule marking the row of the current song.
+fn active_rule(ui: &Ui, theme: &Theme, rect: egui::Rect) {
+    ui.painter().rect_filled(
+        egui::Rect::from_min_size(rect.left_top(), Vec2::new(2.0, rect.height())),
+        0,
+        theme.scheme.on_surface,
+    );
+}
+
 /// Loading skeleton for a shelf of cards, using the existing shimmer widgets.
 pub fn skeleton_cards(ui: &mut Ui, theme: &Theme, width: f32) {
     let columns = if width >= 840.0 {
@@ -232,9 +235,9 @@ pub fn skeleton_cards(ui: &mut Ui, theme: &Theme, width: f32) {
                 Layout::top_down(Align::Min),
                 |ui| {
                     ui.set_width(card_width);
-                    shimmer(ui, theme, Vec2::splat(card_width), 8);
+                    shimmer(ui, theme, Vec2::splat(card_width), SHAPE_LARGE);
                     ui.add_space(DP8);
-                    shimmer(ui, theme, Vec2::new(card_width * 0.7, 12.0), 4);
+                    shimmer(ui, theme, Vec2::new(card_width * 0.7, 12.0), 0);
                 },
             );
         }
@@ -253,7 +256,7 @@ pub fn error_block(ui: &mut Ui, theme: &Theme, message: &str) -> bool {
     empty_state(ui, theme, "cloud_off", "Could not load", message);
     let mut retry = false;
     ui.vertical_centered(|ui| {
-        if filled_button(ui, theme, Some("refresh"), "Try again").clicked() {
+        if filled_button(ui, theme, None, "Try again").clicked() {
             retry = true;
         }
     });
@@ -269,8 +272,8 @@ pub fn load_more(ui: &mut Ui, theme: &Theme, more_loading: bool) -> bool {
         crate::widgets::text(
             ui.painter(),
             rect.left_top() + Vec2::new(DP8, 10.0),
-            "Loading more…",
-            regular_font(14.0),
+            "LOADING MORE…",
+            font_label(11.0),
             theme.scheme.on_surface_variant,
         );
         return false;
@@ -480,6 +483,10 @@ pub fn mixed_items(
                     source,
                 });
             }
+            if active {
+                active_rule(ui, theme, response.row.rect);
+            }
+            divider(ui, theme);
         }
     }
     let cards: Vec<&YtItem> = items
@@ -575,6 +582,10 @@ pub fn song_list(
                 source,
             });
         }
+        if active {
+            active_rule(ui, theme, response.row.rect);
+        }
+        divider(ui, theme);
     }
     intents
 }

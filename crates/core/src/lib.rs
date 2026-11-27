@@ -24,8 +24,8 @@ pub use models::{
 pub use player::{PlaybackStatus, PlayerSnapshot};
 pub use queue::{Queue, QueueSource, RepeatMode};
 pub use settings::{
-    AudioQuality, DownloadSettings, LibrarySort, LyricsSettings, NavStyle, ProxyConfig, Settings,
-    ThemeMode,
+    AudioQuality, DownloadSettings, HomePage, HomeView, LibrarySort, LyricsSettings, NavStyle,
+    ProxyConfig, Settings, ThemeMode,
 };
 pub use util::{
     format_duration, format_duration_opt, format_position, now_millis, parse_video_id,

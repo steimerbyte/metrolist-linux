@@ -1,27 +1,27 @@
 //! Full player route: backdrop, art, seek, transport, volume, like, lyrics.
 
-use eframe::egui::{
-    self, Align, Color32, Layout, Pos2, Rect, Sense, TextureHandle, Ui, Vec2, WidgetInfo,
-};
+use eframe::egui::{self, Align, Layout, Pos2, Rect, Sense, TextureHandle, Ui, Vec2, WidgetInfo};
 
 use crate::motion;
-use crate::pure::advance_vinyl_angle;
 use crate::theme::{
-    bold_font, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8, TOUCH,
+    font_label, medium_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP8, HEADLINE_SMALL,
+    LABEL_SMALL, SHAPE_LARGE, TOUCH,
 };
 use crate::widgets::{
-    filled_icon_button_swap, icon_button, icon_button_at, paint_icon, progress_slider, slider,
-    text_width, vinyl_disc,
+    art_or_placeholder, icon_button, icon_button_at, outlined_button, paint_icon, paint_icon_swap,
+    progress_slider, slider,
 };
 use ml_core::{format_position, PlaybackStatus, RepeatMode, Song};
 
-/// Volume slider width; mute button (40) + 12 dp gap + slider = 202 dp row.
+/// Volume slider width; mute button (44) + 12 dp gap + 150 dp slider = 206 dp row.
 const VOLUME_SLIDER: f32 = 150.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlayerAction {
     None,
     TogglePlay,
+    /// Reload the current track after a playback error.
+    Retry,
     Next,
     Previous,
     Seek(u64),
@@ -42,6 +42,8 @@ pub struct PlayerView<'a> {
     pub song: Option<&'a Song>,
     pub playing: bool,
     pub status: PlaybackStatus,
+    /// Reason behind [`PlaybackStatus::Error`], shown inline instead of a toast.
+    pub error: Option<&'a str>,
     pub position_ms: u64,
     pub duration_ms: u64,
     pub shuffle: bool,
@@ -56,46 +58,13 @@ pub struct PlayerView<'a> {
     pub radio_active: bool,
 }
 
-/// Full-window backdrop derived from the cover (or a scheme gradient).
-pub fn backdrop(ui: &mut Ui, app_theme: &Theme, texture: Option<&TextureHandle>) {
-    let rect = ui.max_rect();
-    let painter = ui.painter().with_clip_rect(rect);
-    painter.rect_filled(rect, 0, app_theme.bg());
-    if let Some(texture) = texture {
-        painter.image(
-            texture.id(),
-            rect,
-            Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-            Color32::WHITE,
-        );
-        let surface = app_theme.scheme.surface;
-        painter.rect_filled(
-            rect,
-            0,
-            Color32::from_rgba_unmultiplied(surface.r(), surface.g(), surface.b(), 232),
-        );
-    } else {
-        painter.circle_filled(
-            rect.left_top() + Vec2::new(rect.width() * 0.15, rect.height() * 0.08),
-            rect.width() * 0.85,
-            Color32::from_rgba_unmultiplied(
-                app_theme.scheme.primary_container.r(),
-                app_theme.scheme.primary_container.g(),
-                app_theme.scheme.primary_container.b(),
-                60,
-            ),
-        );
-        painter.circle_filled(
-            rect.right_bottom() - Vec2::new(rect.width() * 0.1, rect.height() * 0.05),
-            rect.width() * 0.7,
-            Color32::from_rgba_unmultiplied(
-                app_theme.scheme.tertiary_container.r(),
-                app_theme.scheme.tertiary_container.g(),
-                app_theme.scheme.tertiary_container.b(),
-                48,
-            ),
-        );
-    }
+/// Dither strength of the player stage behind the cover.
+const STAGE_STRENGTH: f32 = 0.12;
+
+/// Flat backdrop: the Nothing player never tints or blurs the cover into the
+/// surface; the artwork stays a framed square on `bg()`.
+pub fn backdrop(ui: &mut Ui, app_theme: &Theme, _texture: Option<&TextureHandle>) {
+    ui.painter().rect_filled(ui.max_rect(), 0, app_theme.bg());
 }
 
 pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -> PlayerAction {
@@ -119,7 +88,7 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         "player_back",
         Rect::from_center_size(
             Pos2::new(top_rect.left() + 24.0, top_rect.center().y),
-            Vec2::splat(40.0),
+            Vec2::splat(TOUCH),
         ),
         "arrow_back",
         "Back",
@@ -131,7 +100,7 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         "player_queue",
         Rect::from_center_size(
             Pos2::new(top_rect.right() - 24.0, top_rect.center().y),
-            Vec2::splat(40.0),
+            Vec2::splat(TOUCH),
         ),
         "queue_music",
         "Queue",
@@ -142,8 +111,8 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         app_theme,
         "player_lyrics",
         Rect::from_center_size(
-            Pos2::new(top_rect.right() - 68.0, top_rect.center().y),
-            Vec2::splat(40.0),
+            Pos2::new(top_rect.right() - 72.0, top_rect.center().y),
+            Vec2::splat(TOUCH),
         ),
         "lyrics",
         "Lyrics",
@@ -154,8 +123,8 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         app_theme,
         "player_library",
         Rect::from_center_size(
-            Pos2::new(top_rect.right() - 112.0, top_rect.center().y),
-            Vec2::splat(40.0),
+            Pos2::new(top_rect.right() - 120.0, top_rect.center().y),
+            Vec2::splat(TOUCH),
         ),
         if view.in_library {
             "library_music"
@@ -169,17 +138,15 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
         },
         22.0,
     );
-    let title = "Now playing";
-    let title_width = text_width(ui.painter(), title, medium_font(14.0));
-    crate::widgets::text(
+    // Eyebrow: the route context, uppercase mono 11.
+    let eyebrow_x = top_rect.left() + 24.0 + TOUCH / 2.0 + 8.0;
+    crate::widgets::elided(
         ui.painter(),
-        Pos2::new(
-            top_rect.center().x - title_width / 2.0,
-            top_rect.center().y - 8.0,
-        ),
-        title,
-        medium_font(14.0),
+        Pos2::new(eyebrow_x, top_rect.center().y - 7.0),
+        "NOW PLAYING",
+        font_label(LABEL_SMALL),
         app_theme.scheme.on_surface_variant,
+        (top_rect.right() - 142.0 - 8.0 - eyebrow_x).max(0.0),
     );
     if back.clicked() {
         return PlayerAction::Close;
@@ -195,37 +162,33 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
     }
 
     let available_height = ui.available_height();
-    let art_size = (width - 24.0)
-        .min(380.0)
-        .min((available_height * 0.48).max(140.0))
+    // Full-width square hero; the height cap keeps the transport above the fold.
+    let art_size = width
+        .min(430.0)
+        .min((available_height * 0.5).max(140.0))
         .max(120.0);
-    let spinning =
-        view.playing && view.status == PlaybackStatus::Playing && !motion::reduced(ui.ctx());
-    let dt = ui.input(|input| input.stable_dt);
-    let vinyl_angle = ui.data_mut(|data| {
-        let state = data.get_temp_mut_or_insert_with::<VinylState>(
-            egui::Id::unique("player_vinyl_state"),
-            || VinylState::new(&song.id),
-        );
-        state.step(&song.id, spinning, dt);
-        state.angle
-    });
-    if spinning {
-        ui.ctx().request_repaint();
-    }
     ui.add_space(DP4);
+    // The stage spans the window, not the content column: the dots stay
+    // visible in the side insets on compact widths.
+    let window = ui.input(|input| input.viewport_rect());
+    let stage = (window, window.x_range());
     ui.vertical_centered(|ui| {
         let (art_rect, art_response) =
             ui.allocate_exact_size(Vec2::splat(art_size), Sense::hover());
         art_response
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "Album art"));
         art_response.on_hover_text("Album art");
-        vinyl_disc(ui, app_theme, view.texture, art_rect, vinyl_angle);
+        // The stage behind the cover: dots show in the margins, the artwork
+        // itself stays a clean framed square.
+        let band = Rect::from_x_y_ranges(stage.1, art_rect.y_range());
+        let stage_painter = ui.painter().with_clip_rect(stage.0);
+        crate::widgets::dither_rect(&stage_painter, band, STAGE_STRENGTH);
+        art_or_placeholder(ui, app_theme, view.texture, art_rect, SHAPE_LARGE);
         ui.add_space(DP16);
         ui.add(
             egui::Label::new(
                 egui::RichText::new(&song.title)
-                    .font(bold_font(24.0))
+                    .font(medium_font(HEADLINE_SMALL))
                     .color(app_theme.scheme.on_surface),
             )
             .truncate(),
@@ -241,7 +204,7 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
                 egui::Label::new(
                     egui::RichText::new(&album.title)
                         .font(regular_font(12.0))
-                        .color(app_theme.scheme.outline),
+                        .color(app_theme.scheme.on_surface_variant),
                 )
                 .truncate(),
             );
@@ -272,13 +235,13 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
             |ui| {
                 ui.label(
                     egui::RichText::new(format_position(view.position_ms))
-                        .font(regular_font(11.0))
+                        .font(font_label(LABEL_SMALL))
                         .color(app_theme.scheme.on_surface_variant),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                     ui.label(
                         egui::RichText::new(format_position(view.duration_ms))
-                            .font(regular_font(11.0))
+                            .font(font_label(LABEL_SMALL))
                             .color(app_theme.scheme.on_surface_variant),
                     );
                 });
@@ -291,19 +254,35 @@ pub fn show(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) -
             action = next;
         }
 
-        let status = match view.status {
-            PlaybackStatus::Loading => Some("Loading stream…"),
-            PlaybackStatus::Buffering => Some("Buffering…"),
-            PlaybackStatus::Error => Some("Playback error — see notifications"),
-            _ => None,
-        };
-        if let Some(status) = status {
-            ui.add_space(DP8);
-            ui.label(
-                egui::RichText::new(status)
-                    .font(regular_font(12.0))
-                    .color(app_theme.scheme.error),
-            );
+        match view.status {
+            PlaybackStatus::Loading | PlaybackStatus::Buffering => {
+                ui.add_space(DP8);
+                let status = if view.status == PlaybackStatus::Loading {
+                    "LOADING STREAM…"
+                } else {
+                    "BUFFERING…"
+                };
+                ui.label(
+                    egui::RichText::new(status)
+                        .font(font_label(LABEL_SMALL))
+                        .color(app_theme.scheme.on_surface_variant),
+                );
+            }
+            PlaybackStatus::Error => {
+                // `error` is the documented red text role (`on_error_container`);
+                // `scheme.error` is fill-only at 4.05:1 and fails AA as text.
+                ui.add_space(DP8);
+                ui.label(
+                    egui::RichText::new(view.error.unwrap_or("PLAYBACK ERROR").to_uppercase())
+                        .font(font_label(LABEL_SMALL))
+                        .color(app_theme.scheme.on_error_container),
+                );
+                ui.add_space(DP8);
+                if outlined_button(ui, app_theme, "Retry").clicked() {
+                    action = PlayerAction::Retry;
+                }
+            }
+            _ => {}
         }
 
         ui.add_space(DP12);
@@ -411,7 +390,8 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 action = PlayerAction::ToggleLike;
             }
             let shuffle = transport_slot(ui, slot, TOUCH, |ui| {
-                icon_button(ui, app_theme, "shuffle", "Shuffle", 22.0).on_hover_text("Shuffle (S)")
+                transport_button(ui, app_theme, "shuffle", "Shuffle", 20.0)
+                    .on_hover_text("Shuffle (S)")
             });
             if view.shuffle {
                 active_dot(ui, app_theme, &shuffle);
@@ -420,7 +400,7 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 action = PlayerAction::ToggleShuffle;
             }
             let previous = transport_slot(ui, slot, TOUCH, |ui| {
-                icon_button(ui, app_theme, "skip_previous", "Previous", 26.0)
+                transport_button(ui, app_theme, "skip_previous", "Previous", 22.0)
                     .on_hover_text("Previous")
             });
             if previous.clicked() {
@@ -433,22 +413,13 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 motion::SELECT,
             );
             let toggle = transport_slot(ui, 64.0, 64.0, |ui| {
-                filled_icon_button_swap(
-                    ui,
-                    app_theme,
-                    "play_arrow",
-                    "pause",
-                    play_mix,
-                    "Play/Pause",
-                    64.0,
-                )
-                .on_hover_text("Play/Pause (Space)")
+                play_pill(ui, app_theme, play_mix).on_hover_text("Play/Pause (Space)")
             });
             if toggle.clicked() {
                 action = PlayerAction::TogglePlay;
             }
             let next = transport_slot(ui, slot, TOUCH, |ui| {
-                icon_button(ui, app_theme, "skip_next", "Next", 26.0).on_hover_text("Next")
+                transport_button(ui, app_theme, "skip_next", "Next", 22.0).on_hover_text("Next")
             });
             if next.clicked() {
                 action = PlayerAction::Next;
@@ -464,7 +435,7 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 RepeatMode::One => "Repeat one",
             };
             let repeat = transport_slot(ui, slot, TOUCH, |ui| {
-                icon_button(ui, app_theme, repeat_icon, repeat_label, 22.0)
+                transport_button(ui, app_theme, repeat_icon, repeat_label, 20.0)
                     .on_hover_text("Repeat (R)")
             });
             if view.repeat != RepeatMode::Off {
@@ -474,7 +445,7 @@ fn transport(ui: &mut Ui, app_theme: &Theme, view: &PlayerView<'_>, width: f32) 
                 action = PlayerAction::CycleRepeat;
             }
             let radio = transport_slot(ui, slot, TOUCH, |ui| {
-                icon_button(ui, app_theme, "radio", "Start radio", 22.0)
+                transport_button(ui, app_theme, "radio", "Start radio", 20.0)
                     .on_hover_text("Start radio")
             });
             if view.radio_active {
@@ -498,8 +469,8 @@ fn active_dot(ui: &Ui, app_theme: &Theme, response: &egui::Response) {
 }
 
 /// Leading margin and icon-slot width for the transport row. The six icon
-/// slots plus the 64 dp play cell are centred, so the play button always lands
-/// on the art's centre line without absolute button positions.
+/// slots plus the 64 dp play pill are centred, so play always lands on the
+/// art's centre line without absolute button positions.
 fn transport_geometry(width: f32) -> (f32, f32) {
     let transport_width = width.min(360.0);
     let slot = ((transport_width - 64.0) / 6.0).max(0.0);
@@ -527,158 +498,96 @@ fn transport_slot<R>(
     add(&mut slot)
 }
 
+/// Like toggle: the heart inverts to `on_surface` when liked; no hover fill.
 fn like_button(ui: &mut Ui, app_theme: &Theme, liked: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(TOUCH), Sense::click());
-    let (hover_t, press_t) = motion::interaction(ui, &response);
-    if hover_t > 0.0 || press_t > 0.0 {
-        let scale = motion::press_scale_at(press_t);
-        ui.painter().circle_filled(
-            rect.center(),
-            18.0 * scale,
-            motion::state_layer_at(app_theme.scheme.surface_container_high, hover_t, press_t),
-        );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     paint_icon(
         ui.painter(),
         rect.center(),
         "favorite",
-        22.0 * motion::press_scale_at(press_t),
+        22.0 * motion::press_scale(ui, &response),
         if liked {
-            app_theme.scheme.primary
+            app_theme.scheme.on_surface
         } else {
             app_theme.scheme.on_surface_variant
         },
     );
-    motion::focus_ring(ui, rect, 20, &response);
+    motion::focus_ring(ui, rect, 22, &response);
     response
         .widget_info(|| WidgetInfo::selected(egui::Role::Button, true, liked, "Like this song"));
     response
 }
 
-#[derive(Clone, Debug)]
-struct VinylState {
-    song_id: String,
-    angle: f32,
+/// 44 dp secondary transport target: a 1 px frame instead of a fill.
+fn transport_button(
+    ui: &mut Ui,
+    app_theme: &Theme,
+    icon_name: &str,
+    label: &str,
+    icon_size: f32,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(TOUCH), Sense::click());
+    let pill = (rect.height() * 0.5).round() as u8;
+    ui.painter().rect_stroke(
+        rect,
+        pill,
+        egui::Stroke::new(1.0, app_theme.scheme.outline),
+        egui::StrokeKind::Inside,
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    paint_icon(
+        ui.painter(),
+        rect.center(),
+        icon_name,
+        icon_size,
+        app_theme.scheme.on_surface,
+    );
+    motion::focus_ring(ui, rect, pill, &response);
+    response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
+    response
 }
 
-impl VinylState {
-    fn new(song_id: &str) -> Self {
-        Self {
-            song_id: song_id.to_owned(),
-            angle: 0.0,
-        }
+/// Inverted play pill: `on_surface` fill, `surface` glyph.
+fn play_pill(ui: &mut Ui, app_theme: &Theme, mix: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(64.0, TOUCH), Sense::click());
+    let pill = (rect.height() * 0.5).round() as u8;
+    ui.painter()
+        .rect_filled(rect, pill, app_theme.scheme.on_surface);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-
-    fn step(&mut self, song_id: &str, playing: bool, dt: f32) {
-        if self.song_id != song_id {
-            self.song_id.clear();
-            self.song_id.push_str(song_id);
-            self.angle = 0.0;
-            return;
-        }
-        self.angle = advance_vinyl_angle(self.angle, dt, playing);
-    }
+    paint_icon_swap(
+        ui.painter(),
+        rect.center(),
+        "play_arrow",
+        "pause",
+        mix,
+        24.0,
+        app_theme.scheme.surface,
+    );
+    motion::focus_ring(ui, rect, pill, &response);
+    response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, "Play/Pause"));
+    response
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pure::{wrap_vinyl_angle, VINYL_RADIANS_PER_SEC};
     use crate::theme::Theme as TestTheme;
     use eframe::egui::{CentralPanel, Context, Event, Modifiers, PointerButton, RawInput, Shape};
     use ml_core::Settings;
-
-    #[test]
-    fn vinyl_angle_wraps_clamps_freezes_and_resets_on_song_change() {
-        let tau = std::f32::consts::TAU;
-        let wrapped = wrap_vinyl_angle(tau + 0.5);
-        assert!((0.0..tau).contains(&wrapped));
-        assert!((wrapped - 0.5).abs() < 1e-5);
-        let negative = wrap_vinyl_angle(-0.5);
-        assert!((0.0..tau).contains(&negative));
-        assert!((negative - (tau - 0.5)).abs() < 1e-5);
-
-        let one_step = advance_vinyl_angle(0.0, 0.05, true);
-        assert!((one_step - 0.05 * VINYL_RADIANS_PER_SEC).abs() < 1e-5);
-        let clamped = advance_vinyl_angle(0.0, 10.0, true);
-        assert!((clamped - one_step).abs() < 1e-5);
-        let frozen = advance_vinyl_angle(1.2, 1.0, false);
-        assert!((frozen - 1.2).abs() < 1e-6);
-
-        let mut state = VinylState::new("song-a");
-        state.step("song-a", true, 0.05);
-        let before = state.angle;
-        assert!(before > 0.0);
-        state.step("song-a", false, 1.0);
-        assert_eq!(state.angle, before);
-        state.step("song-b", true, 0.05);
-        assert_eq!(state.angle, 0.0);
-        assert_eq!(state.song_id, "song-b");
-    }
-
-    #[test]
-    fn vinyl_disc_renders_with_and_without_texture() {
-        let ctx = Context::default();
-        let theme = TestTheme::from_settings(&Settings::default());
-        let texture = ctx.load_texture(
-            "vinyl-test-cover",
-            egui::ColorImage::filled([8, 8], Color32::from_rgb(90, 40, 120)),
-            egui::TextureOptions::NEAREST,
-        );
-        let input = RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(405.0, 900.0))),
-            ..RawInput::default()
-        };
-        let mut painted = 0;
-        let mut output = ctx.run_ui(input, |ctx| {
-            CentralPanel::default().show(ctx, |ui| {
-                vinyl_disc(
-                    ui,
-                    &theme,
-                    None,
-                    Rect::from_min_size(Pos2::new(16.0, 16.0), Vec2::splat(160.0)),
-                    0.0,
-                );
-                vinyl_disc(
-                    ui,
-                    &theme,
-                    Some(&texture),
-                    Rect::from_min_size(Pos2::new(16.0, 200.0), Vec2::splat(160.0)),
-                    0.37,
-                );
-                painted += 2;
-            });
-        });
-        output.textures_delta.clear();
-        assert_eq!(painted, 2);
-        let mesh = output
-            .shapes
-            .iter()
-            .find_map(|clipped| match &clipped.shape {
-                Shape::Mesh(mesh) => Some(mesh),
-                _ => None,
-            })
-            .expect("textured disc should paint a mesh");
-        assert_eq!(
-            mesh.vertices.len(),
-            98,
-            "centre vertex plus a 96-segment ring"
-        );
-        assert_eq!(mesh.indices.len(), 96 * 3, "one triangle per ring segment");
-        assert!(
-            mesh.vertices
-                .iter()
-                .all(|vertex| (0.0..=1.0).contains(&vertex.uv.x)
-                    && (0.0..=1.0).contains(&vertex.uv.y)),
-            "the circular fan must stay inside the texture"
-        );
-    }
 
     fn test_view(song: &Song) -> PlayerView<'_> {
         PlayerView {
             song: Some(song),
             playing: true,
             status: PlaybackStatus::Playing,
+            error: None,
             position_ms: 30_000,
             duration_ms: 120_000,
             shuffle: false,
@@ -751,7 +660,9 @@ mod tests {
 
     #[test]
     fn transport_slots_keep_play_centred_at_every_width() {
-        for width in [320.0, 373.0, 405.0, 560.0, 1100.0] {
+        // Narrowest width where six touch-sized slots still fit beside play.
+        let narrowest = TOUCH * 6.0 + 64.0;
+        for width in [narrowest, 373.0, 405.0, 560.0, 1100.0] {
             let (leading, slot) = transport_geometry(width);
             assert!(leading >= 0.0);
             assert!(
@@ -813,7 +724,7 @@ mod tests {
         let theme = TestTheme::from_settings(&Settings::default());
         let width = 357.0;
         let (_, slot) = transport_geometry(width);
-        assert!(slot >= TOUCH, "405-wide player keeps 40 dp icon slots");
+        assert!(slot >= TOUCH, "405-wide player keeps 44 dp icon slots");
         let song = test_song();
         let mut view = test_view(&song);
 
@@ -876,6 +787,36 @@ mod tests {
                 Shape::Circle(circle) if (circle.radius - 2.0).abs() < 0.01
             )),
             "no active dot without a radio queue"
+        );
+    }
+
+    #[test]
+    fn error_state_paints_the_reason_and_a_retry_button() {
+        let theme = TestTheme::from_settings(&Settings::default());
+        let song = test_song();
+        let mut view = test_view(&song);
+        view.playing = false;
+        view.status = PlaybackStatus::Error;
+        view.error = Some("mpv could not play the current file");
+        let ctx = Context::default();
+        let (_, output) = clickable_frame(&ctx, 405.0, 900.0, Vec::new(), |ui| {
+            show(ui, &theme, &view, 357.0)
+        });
+        let texts: Vec<&str> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                Shape::Text(text) => Some(text.galley.text()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            texts.iter().any(|text| text.contains("MPV COULD NOT PLAY")),
+            "error reason is inline: {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.contains("RETRY")),
+            "error state offers RETRY: {texts:?}"
         );
     }
 

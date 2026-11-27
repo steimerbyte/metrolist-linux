@@ -151,7 +151,8 @@ impl PreparedRequest {
 ///
 /// `set_login` is deliberately per-request (upstream `SearchAuthenticationTest`):
 /// cookie/Authorization/onBehalfOfUser only travel on explicitly authenticated
-/// calls, never on automatic lookups or continuations.
+/// calls, never on automatic lookups. The home feed and its continuation opt
+/// in: YouTube answers the guest "Trends" page to a cookie-only request.
 pub(crate) fn prepare(
     config: &ClientConfig,
     versions: &ClientVersions,
@@ -160,12 +161,20 @@ pub(crate) fn prepare(
     body: Value,
     set_login: bool,
     integrity: Option<&crate::pot::PoTokens>,
+    jar_visitor: Option<&str>,
 ) -> PreparedRequest {
     let auth = set_login.then_some(config.cookie.as_deref()).flatten();
+    // An authenticated call takes the session's own visitor from the live jar;
+    // the ytcfg scrape only ever carries the guest identity.
+    let guest = if set_login {
+        jar_visitor
+    } else {
+        versions.visitor_data.as_deref()
+    };
     let visitor = integrity
         .map(|t| t.visitor_data.as_str())
         .or(config.visitor_data.as_deref())
-        .or(versions.visitor_data.as_deref());
+        .or(guest);
 
     let mut client = kind.descriptor(versions);
     if let Some(object) = client.as_object_mut() {
@@ -439,6 +448,7 @@ mod tests {
             json!({"query":"q"}),
             true,
             None,
+            None,
         );
         assert!(authed.header("Authorization").is_some());
         assert!(authed.header("Cookie").unwrap().contains("SAPISID=session"));
@@ -458,6 +468,7 @@ mod tests {
             "search",
             json!({"query":"q"}),
             false,
+            None,
             None,
         );
         assert_eq!(anon.header("Authorization"), None);
@@ -491,6 +502,7 @@ mod tests {
                 body,
                 false,
                 None,
+                None,
             );
             assert_eq!(request.header("Authorization"), None, "{endpoint}");
             assert_eq!(request.header("X-Goog-AuthUser"), None, "{endpoint}");
@@ -514,6 +526,7 @@ mod tests {
             json!({"videoId": "v"}),
             false,
             None,
+            None,
         );
         assert_eq!(ios.header("X-YouTube-Client-Version"), Some(IOS_VERSION));
         let web = prepare(
@@ -523,6 +536,7 @@ mod tests {
             "browse",
             json!({"browseId": "FEmusic_home"}),
             false,
+            None,
             None,
         );
         assert_eq!(
@@ -537,6 +551,7 @@ mod tests {
             json!({"videoId": "v"}),
             false,
             None,
+            None,
         );
         assert_eq!(
             vision.header("X-YouTube-Client-Version"),
@@ -550,6 +565,56 @@ mod tests {
                 .and_then(Value::as_str),
             Some("RealityDevice17,1")
         );
+    }
+
+    #[test]
+    fn authenticated_requests_prefer_the_jar_visitor() {
+        let versions = ClientVersions {
+            visitor_data: Some("SCRAPE".into()),
+            ..ClientVersions::default()
+        };
+        let visitor = |request: &PreparedRequest| {
+            request
+                .body
+                .pointer("/context/client/visitorData")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        };
+        let authed = prepare(
+            &config(),
+            &versions,
+            ClientKind::WebRemix,
+            "browse",
+            json!({}),
+            true,
+            None,
+            Some("JAR"),
+        );
+        assert_eq!(visitor(&authed).as_deref(), Some("JAR"));
+        // A login never borrows the guest scrape when the jar has nothing.
+        let no_jar = prepare(
+            &config(),
+            &versions,
+            ClientKind::WebRemix,
+            "browse",
+            json!({}),
+            true,
+            None,
+            None,
+        );
+        assert_eq!(visitor(&no_jar), None);
+        // Signed out keeps the scrape, jar or not.
+        let anon = prepare(
+            &config(),
+            &versions,
+            ClientKind::WebRemix,
+            "browse",
+            json!({}),
+            false,
+            None,
+            Some("JAR"),
+        );
+        assert_eq!(visitor(&anon).as_deref(), Some("SCRAPE"));
     }
 
     #[test]
@@ -568,6 +633,7 @@ mod tests {
             json!({"videoId":"v"}),
             false,
             Some(&tokens),
+            None,
         );
         assert_eq!(request.header("X-Goog-Visitor-Id"), Some("VISITOR"));
         assert_eq!(

@@ -25,18 +25,21 @@ impl MockData {
         let home = vec![
             HomeSection {
                 title: "Quick picks".to_string(),
+                id: None,
                 items: quick_picks.iter().cloned().map(YtItem::Song).collect(),
                 continuation: None,
                 kind: SectionKind::QuickPicks,
             },
             HomeSection {
                 title: "Keep listening".to_string(),
+                id: None,
                 items: keep.into_iter().map(YtItem::Album).collect(),
                 continuation: None,
                 kind: SectionKind::KeepListening,
             },
             HomeSection {
                 title: "New releases".to_string(),
+                id: None,
                 items: new.into_iter().map(YtItem::Album).collect(),
                 continuation: None,
                 kind: SectionKind::NewReleases,

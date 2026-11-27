@@ -38,6 +38,9 @@ use crate::{AudioCommand, AudioEvent};
 /// [`PlaybackController::submit_resolved`].
 pub trait StreamResolver: Send + Sync {
     fn resolve(&self, video_id: &str) -> Option<String>;
+
+    /// Drop the cached URL for `video_id`; called when the engine rejects it.
+    fn invalidate(&self, _video_id: &str) {}
 }
 
 /// Sleep timer modes mirrored from the Android client.
@@ -1153,6 +1156,13 @@ impl PlaybackController {
             }
             AudioEvent::EndFile => self.handle_end_file(),
             AudioEvent::Error(message) => {
+                // A rejected googlevideo URL must not be replayed: drop it
+                // everywhere so Play re-resolves instead of reloading it.
+                if let Some(song) = self.queue.current() {
+                    self.resolved.remove(&song.id);
+                    self.resolver.invalidate(&song.id);
+                }
+                self.current_url = None;
                 self.snapshot.status = PlaybackStatus::Error;
                 self.emit_snapshot();
                 self.outbox.push(ControllerEvent::Error(message));
@@ -1638,6 +1648,49 @@ mod tests {
             .controller
             .submit_resolved("b".to_string(), "url:b".to_string());
         assert_eq!(harness.commands(), vec![enqueue("url:b")]);
+    }
+
+    struct Revocable {
+        revoked: std::sync::Mutex<HashSet<String>>,
+    }
+
+    impl StreamResolver for Revocable {
+        fn resolve(&self, video_id: &str) -> Option<String> {
+            let revoked = self.revoked.lock().unwrap();
+            (!revoked.contains(video_id)).then(|| format!("url:{video_id}"))
+        }
+
+        fn invalidate(&self, video_id: &str) {
+            self.revoked.lock().unwrap().insert(video_id.to_string());
+        }
+    }
+
+    #[test]
+    fn engine_error_drops_the_rejected_url_before_the_next_play() {
+        let resolver = Arc::new(Revocable {
+            revoked: std::sync::Mutex::new(HashSet::new()),
+        });
+        let mut harness = Harness::new(resolver);
+        harness.controller.play_queue(queue_of(&["a"]), 0);
+        assert_eq!(harness.commands(), vec![load("url:a")]);
+
+        harness.engine(AudioEvent::Error(
+            "mpv could not play the current file".to_string(),
+        ));
+        let events = harness.controller.poll();
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ControllerEvent::Error(_))));
+        assert_eq!(harness.controller.snapshot().status, PlaybackStatus::Error);
+
+        // Play must re-resolve instead of reloading the rejected URL.
+        harness.controller.play_pause();
+        let events = harness.controller.poll();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ControllerEvent::NeedUrl { video_id, prefetch: false } if video_id == "a"
+        )));
+        assert!(harness.commands().is_empty());
     }
 
     #[test]

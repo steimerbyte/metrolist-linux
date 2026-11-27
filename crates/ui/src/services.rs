@@ -33,7 +33,7 @@ use ml_innertube::cookies::CookieJar;
 use ml_innertube::pages::browse::BrowsePage;
 use ml_innertube::pages::moods::MoodsAndGenres;
 use ml_innertube::pages::podcast::PodcastPage;
-use ml_innertube::{ClientConfig, InnertubeClient, SearchFilter};
+use ml_innertube::{ClientConfig, InnertubeClient, SearchFilter, StreamShim};
 use ml_integrations::lastfm::HttpTransport;
 use ml_integrations::{LastFmClient, LastFmConfig, LastFmTransport};
 use ml_lyrics::{
@@ -199,12 +199,20 @@ pub enum UiEvent {
 /// Synchronous stream cache shared with `PlaybackController`.
 struct UrlCache {
     client: InnertubeClient,
-    quality: Mutex<AudioQuality>,
+    quality: Arc<Mutex<AudioQuality>>,
     urls: Mutex<HashMap<String, String>>,
+    /// Present when loopback playback is available; see [`StreamShim`].
+    shim: Option<Arc<StreamShim>>,
 }
 
 impl StreamResolver for UrlCache {
     fn resolve(&self, video_id: &str) -> Option<String> {
+        // The shim re-mints per connection because one URL only serves a few
+        // 512 KiB ranges; mpv itself sends `Range: bytes=0-`, which the capped
+        // clients reject.
+        if let Some(shim) = &self.shim {
+            return Some(shim.url_for(video_id));
+        }
         if let Some(url) = self.urls.lock().get(video_id) {
             return Some(url.clone());
         }
@@ -212,6 +220,12 @@ impl StreamResolver for UrlCache {
         self.client
             .cached_stream(video_id, quality)
             .map(|info| info.url)
+    }
+
+    fn invalidate(&self, video_id: &str) {
+        self.urls.lock().remove(video_id);
+        self.client
+            .invalidate_stream(video_id, *self.quality.lock());
     }
 }
 
@@ -522,11 +536,16 @@ impl Services {
         }
         let client = InnertubeClient::new(config);
 
-        let quality = settings.audio_quality;
+        let quality = Arc::new(Mutex::new(settings.audio_quality));
+        let shim_quality = quality.clone();
+        let shim = StreamShim::start(client.clone(), move || *shim_quality.lock())
+            .ok()
+            .map(Arc::new);
         let urls = Arc::new(UrlCache {
             client: client.clone(),
-            quality: Mutex::new(quality),
+            quality: quality.clone(),
             urls: Mutex::new(HashMap::new()),
+            shim,
         });
 
         let (engine, mut controller) = match MpvEngine::spawn(AudioConfig::default()) {
@@ -655,80 +674,75 @@ impl Services {
         };
         let download_badges: Arc<Mutex<HashMap<String, DownloadBadge>>> =
             Arc::new(Mutex::new(HashMap::new()));
-        let (downloads, downloads_error) =
-            match DownloadManager::with_source(config, Arc::new(client.clone())) {
-                Ok(manager) => {
-                    {
-                        let mut badges = download_badges.lock();
-                        for entry in manager.list() {
-                            badges.insert(entry.id.clone(), download_badge(Some(&entry)));
-                        }
+        let dl_source: Arc<dyn ml_downloads::AudioSource> =
+            Arc::new(crate::audio_source::InnerTubeAudioSource(client.clone()));
+        let (downloads, downloads_error) = match DownloadManager::with_source(config, dl_source) {
+            Ok(manager) => {
+                {
+                    let mut badges = download_badges.lock();
+                    for entry in manager.list() {
+                        badges.insert(entry.id.clone(), download_badge(Some(&entry)));
                     }
-                    let receiver = manager.events();
-                    let forward = publisher.clone();
-                    let badges = download_badges.clone();
-                    match std::thread::Builder::new()
-                        .name("ml-downloads-ui".into())
-                        .spawn(move || {
-                            let mut last_percent: HashMap<String, u8> = HashMap::new();
-                            while let Ok(event) = receiver.recv() {
-                                match &event {
-                                    DownloadEvent::Queued(id) => {
-                                        badges.lock().insert(id.clone(), DownloadBadge::Queued);
-                                        eprintln!("downloads: queued {id}");
-                                    }
-                                    DownloadEvent::Progress { id, bytes, total } => {
-                                        let percent =
-                                            ml_downloads::progress_percent(*bytes, *total);
-                                        badges.lock().insert(
-                                            id.clone(),
-                                            DownloadBadge::Downloading(percent),
-                                        );
-                                        let previous = last_percent.get(id).copied().unwrap_or(0);
-                                        if percent >= previous.saturating_add(10) || percent == 100
-                                        {
-                                            last_percent.insert(id.clone(), percent);
-                                            eprintln!(
+                }
+                let receiver = manager.events();
+                let forward = publisher.clone();
+                let badges = download_badges.clone();
+                match std::thread::Builder::new()
+                    .name("ml-downloads-ui".into())
+                    .spawn(move || {
+                        let mut last_percent: HashMap<String, u8> = HashMap::new();
+                        while let Ok(event) = receiver.recv() {
+                            match &event {
+                                DownloadEvent::Queued(id) => {
+                                    badges.lock().insert(id.clone(), DownloadBadge::Queued);
+                                    eprintln!("downloads: queued {id}");
+                                }
+                                DownloadEvent::Progress { id, bytes, total } => {
+                                    let percent = ml_downloads::progress_percent(*bytes, *total);
+                                    badges
+                                        .lock()
+                                        .insert(id.clone(), DownloadBadge::Downloading(percent));
+                                    let previous = last_percent.get(id).copied().unwrap_or(0);
+                                    if percent >= previous.saturating_add(10) || percent == 100 {
+                                        last_percent.insert(id.clone(), percent);
+                                        eprintln!(
                                             "downloads: progress {id} {percent}% ({bytes}/{total})"
                                         );
-                                        }
-                                    }
-                                    DownloadEvent::Completed { id, path } => {
-                                        badges.lock().insert(id.clone(), DownloadBadge::Completed);
-                                        eprintln!(
-                                            "downloads: completed {id} -> {}",
-                                            path.display()
-                                        );
-                                    }
-                                    DownloadEvent::Failed { id, error } => {
-                                        badges.lock().insert(id.clone(), DownloadBadge::Failed);
-                                        eprintln!("downloads: failed {id}: {error}");
-                                    }
-                                    DownloadEvent::Cancelled(id) => {
-                                        badges.lock().insert(id.clone(), DownloadBadge::Cancelled);
-                                        eprintln!("downloads: cancelled {id}");
-                                    }
-                                    DownloadEvent::Removed(id) => {
-                                        badges.lock().remove(id);
-                                        eprintln!("downloads: removed {id}");
-                                    }
-                                    DownloadEvent::StorageChanged { used, limit } => {
-                                        eprintln!("downloads: storage {used}/{limit:?}");
                                     }
                                 }
-                                forward.send(UiEvent::Download(event));
+                                DownloadEvent::Completed { id, path } => {
+                                    badges.lock().insert(id.clone(), DownloadBadge::Completed);
+                                    eprintln!("downloads: completed {id} -> {}", path.display());
+                                }
+                                DownloadEvent::Failed { id, error } => {
+                                    badges.lock().insert(id.clone(), DownloadBadge::Failed);
+                                    eprintln!("downloads: failed {id}: {error}");
+                                }
+                                DownloadEvent::Cancelled(id) => {
+                                    badges.lock().insert(id.clone(), DownloadBadge::Cancelled);
+                                    eprintln!("downloads: cancelled {id}");
+                                }
+                                DownloadEvent::Removed(id) => {
+                                    badges.lock().remove(id);
+                                    eprintln!("downloads: removed {id}");
+                                }
+                                DownloadEvent::StorageChanged { used, limit } => {
+                                    eprintln!("downloads: storage {used}/{limit:?}");
+                                }
                             }
-                        }) {
-                        Ok(_) => {}
-                        Err(error) => notes.push(format!("Download events unavailable: {error}")),
-                    }
-                    (Some(manager), None)
+                            forward.send(UiEvent::Download(event));
+                        }
+                    }) {
+                    Ok(_) => {}
+                    Err(error) => notes.push(format!("Download events unavailable: {error}")),
                 }
-                Err(error) => {
-                    notes.push(format!("Downloads unavailable: {error}"));
-                    (None, Some(error.to_string()))
-                }
-            };
+                (Some(manager), None)
+            }
+            Err(error) => {
+                notes.push(format!("Downloads unavailable: {error}"));
+                (None, Some(error.to_string()))
+            }
+        };
         let download_quality = downloads.as_ref().map(|_| settings.audio_quality);
         let lastfm_transport: Arc<dyn LastFmTransport> = Arc::new(HttpTransport::with_defaults());
         let lastfm = LastFmWorker::new(
@@ -1013,11 +1027,12 @@ impl Services {
 
     // ---------------------------------------------------------------- pages
 
-    pub fn load_home(&self) {
+    pub fn load_home(&self, view: ml_core::HomeView) {
         let client = self.client.clone();
         let publisher = self.publisher();
+        let page = view.page;
         self.rt.spawn(async move {
-            let event = match client.home().await {
+            let event = match client.home(page).await {
                 Ok(feed) => UiEvent::Core(AppEvent::HomeLoaded(feed)),
                 Err(error) => UiEvent::Core(AppEvent::Error(error)),
             };
@@ -1546,8 +1561,15 @@ impl Services {
         self.rt.spawn(async move {
             match client.stream_info(&video_id, quality).await {
                 Ok(info) => {
+                    // One URL serves only a few 512 KiB ranges (SABR rollout),
+                    // and mpv's open-ended Range is rejected outright; hand the
+                    // controller the loopback shim instead.
+                    let url = match &urls.shim {
+                        Some(shim) => shim.url_for(&video_id),
+                        None => info.url.clone(),
+                    };
                     urls.urls.lock().insert(video_id.clone(), info.url.clone());
-                    controller.lock().submit_resolved(video_id, info.url);
+                    controller.lock().submit_resolved(video_id, url);
                     publisher.send(UiEvent::Resolved);
                 }
                 Err(error) => publisher.send(UiEvent::PlaybackFailed {

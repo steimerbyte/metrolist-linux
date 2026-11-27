@@ -2,7 +2,7 @@
 
 An **unofficial** native Linux port of
 [Metrolist](https://github.com/MetrolistGroup/Metrolist), the GPL-3.0-only
-YouTube Music client for Android: a Material 3 egui/eframe desktop app with an
+YouTube Music client for Android: a Nothing-OS-styled egui/eframe desktop app with an
 InnerTube (WEB_REMIX) client, SQLite library, offline downloads, mpv playback
 and MPRIS/tray integration. Not affiliated with, endorsed by or sponsored by
 the upstream project or Google.
@@ -48,10 +48,13 @@ and is **not** part of this crate graph.
   Presence (feature-gated, off by default). Account sign-in by importing a
   browser cookie file (Account → *Sign in with cookies.txt*), with library
   sync and a rotating `session-cookies.txt` (`0600`).
-- **Theme** — Material 3 roles from `material-colors` (SPEC_2025/TonalSpot),
-  System/Light/Dark/Pure black, seed colour presets and picker, responsive
-  compact (`< 840 dp`) and expanded shells.
-- **Motion** — one Material 3 motion system (`crates/ui/src/motion.rs`, design
+- **Theme** — one monochrome Nothing palette (`crates/ui/src/theme/scheme.rs`):
+  OLED black/off-white, surfaces #111/#1a1a1a (dark) and #fff/#f0f0f0 (light),
+  1-px hairline borders, radii 16 for cards and pills for chips, no shadows or
+  blur. Space Grotesk body, Doto display ≥ 36 px, Space Mono UPPERCASE labels.
+  System/Light/Dark/Pure black, responsive compact (`< 840 dp`) and expanded
+  shells.
+- **Motion** — one ease-out motion system (`crates/ui/src/motion.rs`, design
   and coverage in `docs/MOTION.md`): duration/easing tokens for route, player,
   dialog, mini player, toast, search, lyrics, skeleton and equalizer animation,
   plus hover/press/focus state layers, a Reduce motion setting and
@@ -62,26 +65,23 @@ N/A), with the exact evidence for each row and the limits of every partial.
 
 ## Screenshots
 
-Captured from the running app with `--screenshot` (see *CI / capture modes*)
-against demo data, signed out. Each thumbnail links to the full-resolution
-frame; dimensions are noted where a frame differs from 1100×760.
+Captured from the Nothing build at 405×900 (compact shell), signed out, dark and
+light. Home is a compositor capture because the live feed's cover art needs
+longer to load than the `--screenshot` settle window allows; the other nine are
+framebuffer captures (`--screenshot`). Each thumbnail links to the
+full-resolution frame.
 
 | | | | |
 |---|---|---|---|
-| [<img src="docs/ui-lyrics-1100.png" width="200" alt="Lyrics">](docs/ui-lyrics-1100.png) | [<img src="docs/ui-charts-1100.png" width="200" alt="Charts">](docs/ui-charts-1100.png) | [<img src="docs/ui-moods-1100.png" width="200" alt="Moods and genres">](docs/ui-moods-1100.png) | [<img src="docs/ui-new-releases-1100.png" width="200" alt="New releases">](docs/ui-new-releases-1100.png) |
-| Lyrics | Charts | Moods and genres | New releases |
-| [<img src="docs/ui-podcasts-1100.png" width="200" alt="Podcasts">](docs/ui-podcasts-1100.png) | [<img src="docs/ui-stats-1100.png" width="200" alt="Stats">](docs/ui-stats-1100.png) | [<img src="docs/ui-wrapped-1100.png" width="200" alt="Wrapped">](docs/ui-wrapped-1100.png) | [<img src="docs/ui-recognition-success-1100.png" width="200" alt="Recognition">](docs/ui-recognition-success-1100.png) |
-| Podcasts | Stats | Wrapped | Recognition |
-| [<img src="docs/ui-together-1100.png" width="200" alt="Listen together">](docs/ui-together-1100.png) | [<img src="docs/ui-integrations-1100.png" width="200" alt="Integrations">](docs/ui-integrations-1100.png) | [<img src="docs/ui-settings-audio-1100.png" width="200" alt="Settings, audio">](docs/ui-settings-audio-1100.png) | [<img src="docs/ui-account-1100.png" width="200" alt="Account">](docs/ui-account-1100.png) |
-| Listen together | Integrations | Settings (audio) | Account (signed out) |
-| [<img src="docs/ui-player-vinyl-405.png" width="200" alt="Vinyl player">](docs/ui-player-vinyl-405.png) | [<img src="docs/ui-sidebar-settings-405.png" width="200" alt="Settings in the navigation">](docs/ui-sidebar-settings-405.png) | | |
-| Vinyl player (405×900) | Settings via nav (405×900) | | |
-| [<img src="docs/ui-library-sort-menu-405.png" width="200" alt="Library sort menu">](docs/ui-library-sort-menu-405.png) | [<img src="docs/ui-creator-hover-405.png" width="200" alt="Artist link">](docs/ui-creator-hover-405.png) | [<img src="docs/ui-player-progress-1100.png" width="200" alt="Player progress">](docs/ui-player-progress-1100.png) | [<img src="docs/ui-player-progress-hover-405.png" width="200" alt="Seek preview">](docs/ui-player-progress-hover-405.png) |
-| Sort menu (405×900) | Artist link (405×900) | Player progress (1100×900) | Seek preview (405×900) |
-| [<img src="docs/ui-search-pill-405.png" width="200" alt="Search pill at 405">](docs/ui-search-pill-405.png) | [<img src="docs/ui-search-pill-1100.png" width="200" alt="Search pill at 1100">](docs/ui-search-pill-1100.png) | [<img src="docs/ui-motion-player-1100.png" width="200" alt="Motion in the player">](docs/ui-motion-player-1100.png) | [<img src="docs/ui-motion-queue-1100.png" width="200" alt="Motion in the queue">](docs/ui-motion-queue-1100.png) |
-| Search pill (405×900) | Search pill (1100×760) | Motion: player (1100×760) | Motion: queue (1100×760) |
-| [<img src="docs/icon-preview.png" width="200" alt="Desktop icon preview">](docs/icon-preview.png) | [<img src="docs/ui-player-progress-405.png" width="200" alt="Player progress">](docs/ui-player-progress-405.png) | | |
-| Desktop icon preview | Player progress (405×900) | | |
+| [<img src="docs/ui-home-dark.png" width="240" alt="Home, dark">](docs/ui-home-dark.png) | [<img src="docs/ui-home-light.png" width="240" alt="Home, light">](docs/ui-home-light.png) | [<img src="docs/ui-search-dark.png" width="240" alt="Search, dark">](docs/ui-search-dark.png) | [<img src="docs/ui-search-light.png" width="240" alt="Search, light">](docs/ui-search-light.png) |
+| Home, dark | Home, light | Search, dark | Search, light |
+| [<img src="docs/ui-library-dark.png" width="240" alt="Library, dark">](docs/ui-library-dark.png) | [<img src="docs/ui-library-light.png" width="240" alt="Library, light">](docs/ui-library-light.png) | [<img src="docs/ui-settings-dark.png" width="240" alt="Settings, dark">](docs/ui-settings-dark.png) | [<img src="docs/ui-settings-light.png" width="240" alt="Settings, light">](docs/ui-settings-light.png) |
+| Library, dark | Library, light | Settings, dark | Settings, light |
+| [<img src="docs/ui-player-dark.png" width="240" alt="Player, dark">](docs/ui-player-dark.png) | [<img src="docs/ui-player-light.png" width="240" alt="Player, light">](docs/ui-player-light.png) | | |
+| Player, dark | Player, light | | |
+
+Frames from the Material 3 releases (up to 0.1.3) remain in `docs/` under their
+old names and in Git history; they no longer describe the current UI.
 
 ### Desktop icon
 
@@ -97,7 +97,7 @@ The `.desktop` entry keeps `Icon=metrolist-desktop`.
 | Layer | State |
 |---|---|
 | `ml-core` | Models, queue state machine, settings, events, utilities + tests |
-| `ml-ui` | M3 theme + motion system, custom widgets, responsive shell, live Home/Search/Album/Artist/Playlist/Library/Settings/player/queue/lyrics screens plus catalog (charts, moods, new releases, podcasts), stats/Wrapped, recognition, Listen Together and integrations |
+| `ml-ui` | Nothing theme + motion system, custom widgets, responsive shell, live Home/Search/Album/Artist/Playlist/Library/Settings/player/queue/lyrics screens plus catalog (charts, moods, new releases, podcasts), stats/Wrapped, recognition, Listen Together and integrations |
 | `ml-innertube` | Live unauthenticated WEB_REMIX browse/search/album/artist/playlist/`next` client; VISIONOS player/stream path needs no PO token. Read-only browser-cookie session discovery exists; OAuth/WebView login and the PO-token (BotGuard) route are not implemented. |
 | `ml-lyrics` | LRCLIB + KuGou wired; LyricsPlus/BetterLyrics/Paxsenix/Zemer refuse with typed errors; LRC/TTML parsing; Macedonian Cyrillic romanisation (other Cyrillic languages return `MlError::Unimplemented`), Japanese/Korean/Chinese/Hindi romanisation implemented |
 | `ml-store` | SQLite schema v1 forward migrations, typed CRUD for library/likes/history/playlists/queue/settings |
@@ -294,9 +294,10 @@ matter for a release are:
 
 Pinned in `rust-toolchain.toml`: **Rust 1.99.1 stable**.
 
-Why not 1.95.0: `material-colors 0.5.0` declares `rust-version = 1.97.0`, so
-Cargo refuses it on 1.95 (observed: `rustc 1.95.0 is not supported by …
-material-colors@0.5.0 requires rustc 1.97.0`). The AppImage container is
+Why not 1.95.0: the workspace used to depend on `material-colors 0.5.0`
+(`rust-version = 1.97.0`), so Cargo refused 1.95. That dependency is gone with
+the Nothing redesign; the pin stays at **1.99.1** because it is the toolchain
+every gate is run with. The AppImage container is
 therefore `rust:1.99.1-bookworm` (glibc 2.36 floor); a host `stable` build is
 1.99.1 and is what is tested here.
 
@@ -351,6 +352,7 @@ Keyboard: `Space` play/pause, `Esc` back/close, `Ctrl+1..4` tabs, `/` search,
 ## Layout
 
 ```text
+crates/boot          ml-boot      boot registry (`crates/*/module.meta`) + start-up timeline
 crates/core          ml-core      models, queue, settings, events, utils
 crates/innertube     ml-innertube WEB_REMIX client, parsers, stream resolution, POT seam
 crates/lyrics        ml-lyrics    provider ladder + LRC/TTML/romanisation
@@ -359,7 +361,7 @@ crates/downloads     ml-downloads manifest-backed offline download manager
 crates/audio         ml-audio     mpv JSON IPC engine + playback controller
 crates/integrations  ml-integrations MPRIS/tray/notifications/single-instance/Discord
 crates/ui            ml-ui        eframe app + `metrolist` binary
-crates/ui/assets/fonts            bundled Roboto + Material Symbols
+crates/ui/assets/fonts            bundled Space Grotesk + Doto + Space Mono + Material Symbols
 assets/i18n                       en.json + 55 locale overlays (not yet wired)
 docs/PARITY.md                    feature parity matrix
 docs/TEST-PARITY.md               upstream test → Rust requirement map
@@ -370,10 +372,12 @@ docs/BUILD.md, packaging/         AppImage, glibc floor, mpv bundle
 
 ## UI architecture summary
 
-- **Theme** (`ui/src/theme/`): M3 colour roles from `material-colors`
-  SPEC_2025/TonalSpot with seed `#ED5564`; pure-black mode; Roboto 400/500/700
-  and Material Symbols Rounded are compiled into the binary from
-  `crates/ui/assets/fonts/` (swap those files to rebrand; notices in `NOTICE`).
+- **Theme** (`ui/src/theme/`): one monochrome Nothing palette (dark #000/#111/
+  #1a1a1a, light #f5f5f5/#fff/#f0f0f0; success #4a9e5c, warning #d4a843, red
+  #D71921 as the single interrupt), 1-px hairlines, radii 16/pill, no shadows.
+  Space Grotesk 400/500, Doto ≥ 36 px and Space Mono UPPERCASE are compiled into
+  the binary from `crates/ui/assets/fonts/` (swap those files to rebrand;
+  notices in `NOTICE`).
 - **Shell** (`ui/src/shell/`): compact `< 840 dp` = top bar + chips + content +
   mini player + bottom nav; expanded `>= 840 dp` = 88 dp nav rail + centered
   960 dp column + pinned mini player.
@@ -396,12 +400,13 @@ Resolved with `directories` 6 under the application name `metrolist-desktop`:
 
 `settings.json` is created with defaults on first run and rewritten whenever
 settings change. Runtime playback extras (EQ preset, speed, output device,
-notifications toggle) live in the SQLite `kv` table. The `dynamic_accent` flag
-is reserved for a future XDG portal accent reader; the seed colour is used.
+notifications toggle) live in the SQLite `kv` table. `seed_color` and the
+`dynamic_accent` flag are retained for settings compatibility only: Nothing is
+monochrome, so the UI no longer derives colours from them.
 
 ## Dependency policy
 
-eframe/egui 0.37, material-colors 0.5, reqwest 0.13 (rustls, no OpenSSL),
+eframe/egui 0.37, reqwest 0.13 (rustls, no OpenSSL),
 tokio 1.54, rusqlite 0.41 (`bundled`), serde, thiserror. No `egui-elegance` at
 runtime. Unused workspace dependencies stay declared so later agents need no
 manifest churn; only inherited dependencies are compiled.
@@ -411,8 +416,9 @@ manifest churn; only inherited dependencies are compiled.
 GPL-3.0-only, no "or later" option. This is an unofficial port of Metrolist and
 a derivative work of the upstream GPL-3.0-only Android source; it is not
 affiliated with, endorsed by or sponsored by the Metrolist project, Google LLC
-or YouTube. Upstream project, bundled fonts (Roboto OFL-1.1, Material Symbols
-Apache-2.0), translations and the bundled mpv/FFmpeg/libass/libplacebo licences
+or YouTube. Upstream project, bundled fonts (Space Grotesk, Doto and Space Mono
+under OFL-1.1, Material Symbols Apache-2.0), translations and the bundled
+mpv/FFmpeg/libass/libplacebo licences
 are recorded in `NOTICE`; the full GPL text is in `LICENSE`. "Metrolist",
 "YouTube", "YouTube Music", "Google" and "Android" are trademarks of their
 respective owners.

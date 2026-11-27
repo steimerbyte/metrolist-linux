@@ -8,7 +8,10 @@ use crate::motion;
 use crate::routes::Route;
 use crate::services::Services;
 use crate::state::Load;
-use crate::theme::{bold_font, regular_font, Theme, DP12, DP16, DP24, DP4, DP48, DP8, GRID_GAP};
+use crate::theme::{
+    font_label, medium_font, Theme, DP12, DP16, DP24, DP4, DP48, DP8, GRID_GAP, LABEL_SMALL,
+    SHAPE_LARGE,
+};
 use crate::widgets::{elided, empty_state, paint_icon, section_header};
 
 use super::{error_block, load_more, section_block, skeleton_cards, skeleton_rows, Intent};
@@ -89,7 +92,7 @@ pub fn show(
 
     intents.extend(discover(ui, theme, width));
 
-    for section in &feed.sections {
+    for (index, section) in feed.sections.iter().enumerate() {
         if section.items.is_empty() {
             continue;
         }
@@ -119,6 +122,12 @@ pub fn show(
                 }
             }
         }
+        if index == 0 {
+            let (edge, _) =
+                ui.allocate_exact_size(Vec2::new(width, 3.0), egui::Sense::hover());
+            crate::widgets::dither_rect(ui.painter(), edge, HEADER_EDGE_STRENGTH);
+            ui.add_space(DP4);
+        }
         intents.extend(section_block(
             ui, theme, services, art, section, current, width, source,
         ));
@@ -134,19 +143,22 @@ pub fn show(
     intents
 }
 
+/// Dither strength of the header edge strip.
+const HEADER_EDGE_STRENGTH: f32 = 0.2;
+
 /// Compact entry points to the catalog pages. Four-up when expanded, two-up
 /// on the compact class; intentionally not search chips.
 fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
     const ENTRIES: [(&str, &str, &str, Route); 4] = [
-        ("bar_chart", "Charts", "Top songs & artists", Route::Charts),
-        ("category", "Moods & genres", "Browse by mood", Route::Moods),
+        ("bar_chart", "Charts", "TOP SONGS & ARTISTS", Route::Charts),
+        ("category", "Moods & genres", "BROWSE BY MOOD", Route::Moods),
         (
             "new_releases",
             "New releases",
-            "Albums & videos",
+            "ALBUMS & VIDEOS",
             Route::NewReleases,
         ),
-        ("podcasts", "Podcasts", "New episodes", Route::Podcasts),
+        ("podcasts", "Podcasts", "NEW EPISODES", Route::Podcasts),
     ];
     let mut intents = Vec::new();
     section_header(ui, theme, "Discover", width, false);
@@ -159,17 +171,24 @@ fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
             for (icon, title, subtitle, route) in chunk {
                 let (rect, response) =
                     ui.allocate_exact_size(Vec2::new(card_width, 80.0), egui::Sense::click());
-                let fill = motion::state_layer(ui, theme.scheme.surface_container_high, &response);
-                ui.painter().rect_filled(rect, 12, fill);
-                let icon_center = rect.left_top() + Vec2::new(28.0, 28.0);
-                ui.painter()
-                    .circle_filled(icon_center, 18.0, theme.scheme.secondary_container);
+                let (hover_t, _) = motion::interaction(ui, &response);
+                let fill = theme
+                    .card()
+                    .lerp_to_gamma(theme.scheme.surface_container_high, hover_t);
+                ui.painter().rect_filled(rect, SHAPE_LARGE, fill);
+                ui.painter().rect_stroke(
+                    rect,
+                    SHAPE_LARGE,
+                    theme.hairline(),
+                    egui::StrokeKind::Inside,
+                );
+                let icon_center = rect.left_center() + Vec2::new(DP16 + DP12, 0.0);
                 paint_icon(
                     ui.painter(),
                     icon_center,
                     icon,
                     20.0,
-                    theme.scheme.on_secondary_container,
+                    theme.scheme.on_surface_variant,
                 );
                 let text_x = rect.left() + DP48 + DP8;
                 let text_width = (rect.right() - DP12 - text_x).max(24.0);
@@ -177,7 +196,7 @@ fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
                     ui.painter(),
                     egui::pos2(text_x, rect.top() + DP16),
                     title,
-                    bold_font(15.0),
+                    medium_font(16.0),
                     theme.scheme.on_surface,
                     text_width,
                 );
@@ -185,18 +204,10 @@ fn discover(ui: &mut Ui, theme: &Theme, width: f32) -> Vec<Intent> {
                     ui.painter(),
                     egui::pos2(text_x, rect.top() + DP16 + 21.0),
                     subtitle,
-                    regular_font(11.0),
+                    font_label(LABEL_SMALL),
                     theme.scheme.on_surface_variant,
                     text_width,
                 );
-                if response.hovered() {
-                    ui.painter().rect_stroke(
-                        rect,
-                        12,
-                        egui::Stroke::new(1.0, theme.scheme.outline_variant),
-                        egui::StrokeKind::Inside,
-                    );
-                }
                 if response.clicked() {
                     intents.push(Intent::Open(route.clone()));
                 }

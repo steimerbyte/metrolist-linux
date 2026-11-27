@@ -1,4 +1,4 @@
-//! Material 3 spacing scale: one step per 4 dp of the 4/8/12/16 rhythm.
+//! Nothing OS spacing scale: one step per 4 dp of the 4/8/12/16 rhythm.
 //!
 //! Values are logical points; the app runs at 1× so 1 pt == 1 dp. Screens and
 //! widgets use these tokens instead of literals so the gaps stay on the same
@@ -21,8 +21,8 @@ pub const DP32: f32 = 32.0;
 /// 48 dp — empty-state top inset.
 pub const DP48: f32 = 48.0;
 
-/// Minimum interactive target (M3 40 dp).
-pub const TOUCH: f32 = 40.0;
+/// Minimum interactive target (Nothing 44 dp).
+pub const TOUCH: f32 = 44.0;
 
 /// Column and row gap of the album/playlist card grids.
 pub const GRID_GAP: f32 = DP12;

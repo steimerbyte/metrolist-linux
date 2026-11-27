@@ -29,23 +29,23 @@ the coverage table.
 
 ## Tokens
 
-Durations are seconds (`f32`), matching egui. They are the Material 3 duration
-tokens we use; unused M3 steps are not declared.
+Durations are seconds (`f32`), matching egui. They follow the short/medium
+ease-out range (100–250 ms); unused steps are not declared.
 
-| Token | Value | M3 name | Used for |
-|---|---|---|---|
-| `HOVER` | 0.10 | short2 | state layer, press scale, thumb, focus ring |
-| `PRESS` | 0.10 | short2 | alias of `HOVER`, names the press intent |
-| `SELECT` | 0.15 | short3 | chip/nav selection morph, skeleton fade, icon swap |
-| `ENTER` | 0.20 | short4 | route enter, lyrics fill |
-| `EXIT` | 0.20 | short4 | toast fade-out (the only exit in this pass) |
-| `MODAL` | 0.25 | medium1 | queue dialog, player open, mini player |
-| `SHIMMER_SWEEP` | 1.8 | — | shimmer band loop (existing 0.55/s) |
-| `SHIMMER_PULSE` | 3.93 | — | shimmer brightness loop (existing 1.6 rad/s) |
-| `BARS_PERIOD` | 1.1 | — | queue playing-bars loop |
-| `VINYL` | existing | — | 10°/s, 36 s per turn (unchanged) |
+| Token | Value | Used for |
+|---|---|---|
+| `HOVER` | 0.10 | state layer, press scale, thumb, focus ring |
+| `PRESS` | 0.10 | alias of `HOVER`, names the press intent |
+| `SELECT` | 0.15 | chip/nav selection morph, skeleton fade, icon swap |
+| `ENTER` | 0.20 | route enter, lyrics fill |
+| `EXIT` | 0.20 | toast fade-out (the only exit in this pass) |
+| `MODAL` | 0.25 | queue dialog, player open, mini player |
+| `SHIMMER_SWEEP` | 1.8 | shimmer band loop (existing 0.55/s) |
+| `SHIMMER_PULSE` | 3.93 | shimmer brightness loop (existing 1.6 rad/s) |
+| `BARS_PERIOD` | 1.1 | queue playing-bars loop |
+| `VINYL` | existing | 10°/s, 36 s per turn (unchanged) |
 
-No long token is declared: the M3 long steps exist for full-screen shared-axis
+No long token is declared: the long steps exist for full-screen shared-axis
 transitions, and this UI's longest single motion (dialog/player) is 250 ms.
 Adding an unused 450 ms constant would invite copy-paste of a duration nothing
 on screen needs.
@@ -56,13 +56,13 @@ Easings are exact cubic-bezier solves (`motion::bezier`, 12 bisection steps,
 | Name | Curve | Use |
 |---|---|---|
 | `emphasized` | (0.2, 0, 0, 1) | default: size, position, selection, route |
-| `standard` | (0.2, 0, 0, 1) | alias with the same curve — M3 defines Standard and Emphasized identically; emphasis comes from duration, not curvature |
-| `decelerate` | (0, 0, 0, 1) | M3 standard decelerate; one-shot entrances from outside (toast, mini player) |
-| `accelerate` | (0.3, 0, 1, 1) | M3 standard accelerate; reserved for exits — no exit animation ships in this pass |
+| `standard` | (0.2, 0, 0, 1) | alias with the same curve; emphasis comes from duration, not curvature |
+| `decelerate` | (0, 0, 0, 1) | standard decelerate; one-shot entrances from outside (toast, mini player) |
+| `accelerate` | (0.3, 0, 1, 1) | standard accelerate; reserved for exits — no exit animation ships in this pass |
 
-Source: the Material Web motion tokens vendored from the M3 spec
-(`duration-short2/3/4`, `medium1`; `easing-standard`, `emphasized`,
-`standard-decelerate`, `standard-accelerate`). The curves are implemented by
+Source: the standard Web animation tokens (`duration-short2/3/4`, `medium1`;
+`easing-standard`, `emphasized`, `standard-decelerate`, `standard-accelerate`).
+The curves are implemented by
 solving the cubic bezier, not by sampling `emath`'s polynomial approximations.
 
 Geometry and tint tokens:
@@ -107,8 +107,6 @@ pub fn state_layer(ui: &Ui, base: Color32, response: &Response) -> Color32;
 pub fn state_layer_at(base: Color32, hover_t: f32, press_t: f32) -> Color32;
 pub fn press_scale(ui: &Ui, response: &Response) -> f32;
 pub fn press_scale_at(t: f32) -> f32;
-pub fn nav_pill(t: f32) -> Vec2;       // 32×28 → 56×32
-pub fn chip_radius(t: f32) -> f32;     // 8 → 16
 pub fn focus_ring(ui: &Ui, rect: Rect, radius: u8, response: &Response);
 pub fn appear(ctx: &Context, id: Id, secs: f32) -> f32; // one-shot 0→1
 pub fn progress(now: f64, start: f64, secs: f32) -> f32; // pure route helper
@@ -300,8 +298,6 @@ Deliberate omissions, with reasons:
 - `appear` with `secs=0` →1 on the first call.
 - Tint: `0 → 0.00`, hover only → `0.08`, hover+press → `0.12` (±1e-6).
 - `press_scale`: 1.0 at t=0, 0.98 at t=1.
-- `nav_pill`: 32×28 at t=0, 56×32 at t=1, monotonically increasing.
-- `chip_radius`: 8 at t=0, 16 at t=1.
 
 ### Widget-level hover/pressed states (`controls.rs` tests)
 
@@ -353,7 +349,7 @@ OUT-OF-SUBSET table, not a trust marker and not a fake proof.
 **P0 — shared core**
 
 1. `crates/ui/src/motion.rs` (new): tokens, bezier, `t`, `state_layer`,
-   `state_layer_at`, `press_scale`/`press_scale_at`, `nav_pill`, `chip_radius`,
+   `state_layer_at`, `press_scale`/`press_scale_at`,
    `focus_ring`, `appear`, `progress`, reduced flag, pure tests; add
    `pub mod motion;` to `lib.rs`.
 2. `theme/mod.rs`: delete the boolean `state_layer`; set
@@ -476,7 +472,7 @@ against live state rather than a `Clone + PartialEq + Default` page value;
 (b) an interrupted transition keeps its original start time, so the next change
 resumes the stale timeline (`run_state` reports running while the value is back
 at the start) instead of reversing; (c) its default normals are linear, so we
-would still supply the M3 bezier and reduced-motion branching.
+would still supply the bezier and reduced-motion branching.
 
 **`blinc_animation` 0.5.1** (Apache-2.0, 4,112 LOC; pulls `blinc_core`,
 slotmap, smallvec, tracing, web-time; MSRV 1.75). The adapter worked: a `Spring`
@@ -484,11 +480,51 @@ in `ctx.data_mut`, stepped by `stable_dt` (clamped to 50 ms) with
 `request_repaint()` only while `!is_settled()`, plus `AnimationPreset::pop_in`
 advanced by `tick(ms)`. Measured at 60 fps: `stiff` settles in 383 ms with 2.8 %
 overshoot, `snappy` 300 ms / 1.2 %, `gentle` 667 ms / 7.3 %; `pop_in(250 ms)`
-peaks at scale 1.1. Our M3 tokens are 100–250 ms with no overshoot, and egui's
+peaks at scale 1.1. Our tokens are 100–250 ms with no overshoot, and egui's
 `animate_bool_with_time_and_easing` already stores the interrupted value and
-requests repaints only mid-flight. Springs would add a second, non-M3 timing
-language and a 4k-LOC dependency for no gain on state layers, nav, chips or the
-player transition.
+requests repaints only mid-flight. Springs would add a second timing language
+and a 4k-LOC dependency for no gain on state layers, nav, chips or the player
+transition.
 
 If page crossfades become a requirement later, the smallest path is a local
 two-route render pass driven by one start time, not either crate.
+
+## Boot sequence (2026-11-27)
+
+The start-up sequence is the most radical surface of the Nothing shell: pure
+OLED black, 1-px rules, Doto ≥ 36 px display, Space Mono CAPS labels, 160 ms
+ease-out handovers, no blur/shadow/gradient, no red. The app behind it uses the
+same palette and the same motion tokens (`theme/scheme.rs`), so boot and shell
+read as one system.
+
+Tokens (`crates/boot/src/timeline.rs`, pure `f32`, unit-tested):
+
+| Token | Value | Meaning |
+|---|---|---|
+| `SLOT` | 0.16 s | one module: `LOADING` at slot start, `OK` after `LOAD` |
+| `LOAD` | 0.05 s | loading sub-phase inside the slot |
+| `HANDOVER` | 0.16 s | row enter (4 dp rise + fade) and the final overlay fade-out |
+
+Ten modules → `10·0.16 + 0.16 = 1.76 s`, inside the 1.0–2.5 s budget; every
+module occupies 160 ms, inside the 120–200 ms budget; both handovers are 160 ms,
+inside 150–200 ms. Row enter uses `motion::decelerate` (ease-out); the overlay
+fade uses the linear `exit_t` because it is an opacity ramp, not a move.
+
+Repaint and reduced motion:
+
+- While active the overlay calls `ctx.request_repaint()` once per frame; when
+  `finished` it paints nothing and requests nothing, so the app returns to its
+  own 250 ms poll.
+- `motion::reduced(ctx)` (from `Theme::install`) makes the sequence finish on the
+  first frame: no rows are painted, all modules still log. Skip on Enter, primary
+  click or touch start does the same one frame later.
+- The overlay is pure painter work: one galley per label per frame, no widget
+  layout, no allocations beyond the `format!` counter and the galleys. It never
+  animates layout, so nothing below it reflows.
+- `--smoke` and `--screenshot` do not paint the overlay at all; the sequence is a
+  process-start surface, not a route.
+
+Deliberate omission: letterspacing. egui has no per-galley tracking, and the
+Nothing label spec's 0.06–0.1 em would need per-glyph galleys for 10 rows ×
+both columns every frame. At 12 px Space Mono the uppercase labels read fine
+without it.

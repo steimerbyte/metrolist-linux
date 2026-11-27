@@ -1,17 +1,19 @@
-//! Custom-painted Material 3 widgets.
+//! Custom-painted Nothing widgets.
 //!
 //! Every interactive widget sets an AccessKit label where the visible label is
 //! not already a stock egui widget. Painted text helpers mirror the UI probe.
 
 mod controls;
+mod dither;
 mod feedback;
 mod rows;
 
 pub use controls::*;
+pub use dither::*;
 pub use feedback::*;
 pub use rows::*;
 
-use eframe::egui::{self, Color32, FontId, Pos2, Stroke, TextureHandle, Ui, Vec2};
+use eframe::egui::{self, Color32, FontId, Pos2, Stroke, StrokeKind, TextureHandle, Ui, Vec2};
 use egui::{text::LayoutJob, text::TextFormat, text::TextWrapping};
 
 use crate::theme::{self, Theme};
@@ -68,14 +70,7 @@ pub fn paint_icon_swap(
     color: Color32,
 ) {
     let mix = mix.clamp(0.0, 1.0);
-    let alpha = |factor: f32| {
-        Color32::from_rgba_unmultiplied(
-            color.r(),
-            color.g(),
-            color.b(),
-            (color.a() as f32 * factor).round() as u8,
-        )
-    };
+    let alpha = |factor: f32| color.gamma_multiply(factor.clamp(0.0, 1.0));
     if mix < 1.0 {
         paint_icon(painter, center, from, size, alpha(1.0 - mix));
     }
@@ -137,17 +132,17 @@ pub fn vinyl_disc(
     let center = rect.center();
     let painter = ui.painter().with_clip_rect(rect);
     let white = Color32::WHITE;
-    painter.circle_filled(center, radius, Color32::from_rgb(17, 16, 20));
+    painter.circle_filled(center, radius, app_theme.scheme.scrim);
     painter.circle_stroke(
         center,
         (radius - 0.5).max(0.0),
-        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 32)),
+        Stroke::new(1.0, Color32::WHITE.gamma_multiply(0.125)),
     );
     for factor in [0.96, 0.90, 0.84] {
         painter.circle_stroke(
             center,
             radius * factor,
-            Stroke::new(0.8, Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
+            Stroke::new(0.8, Color32::WHITE.gamma_multiply(0.078)),
         );
     }
 
@@ -182,7 +177,7 @@ pub fn vinyl_disc(
         painter.circle_stroke(
             center,
             cover_radius,
-            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 48)),
+            Stroke::new(1.0, Color32::WHITE.gamma_multiply(0.188)),
         );
     } else {
         painter.circle_filled(
@@ -191,11 +186,7 @@ pub fn vinyl_disc(
             app_theme.scheme.surface_container_high,
         );
         let primary = app_theme.scheme.primary_container;
-        painter.circle_filled(
-            center,
-            cover_radius * 0.72,
-            Color32::from_rgba_unmultiplied(primary.r(), primary.g(), primary.b(), 190),
-        );
+        painter.circle_filled(center, cover_radius * 0.72, primary.gamma_multiply(0.745));
         paint_icon(
             &painter,
             center,
@@ -211,15 +202,15 @@ pub fn vinyl_disc(
     }
 
     let hole = (radius * 0.035).clamp(2.5, 6.0);
-    painter.circle_filled(center, hole, Color32::from_rgb(9, 8, 11));
+    painter.circle_filled(center, hole, app_theme.scheme.scrim);
     painter.circle_stroke(
         center,
         hole,
-        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 64)),
+        Stroke::new(1.0, Color32::WHITE.gamma_multiply(0.251)),
     );
 }
 
-/// Rounded image, or a themed placeholder when no texture is available.
+/// Image with a 1-px frame, or a flat themed placeholder.
 pub fn art_or_placeholder(
     ui: &mut Ui,
     app_theme: &Theme,
@@ -231,7 +222,7 @@ pub fn art_or_placeholder(
         return;
     }
     if let Some(texture) = texture {
-        // Cover, not letterbox: the M3 layouts are square, the thumbnails are
+        // Cover, not letterbox: the layouts are square, the thumbnails are
         // video frames with baked bars.
         let uv = cover_uv(texture.size_vec2(), rect.size());
         egui::Image::new((texture.id(), rect.size()))
@@ -239,32 +230,10 @@ pub fn art_or_placeholder(
             .corner_radius(radius)
             .paint_at(ui, rect);
     } else {
-        // No decoded cover: a scheme-tinted gradient keeps cards looking
-        // intentional while the thumbnail download is still pending.
+        // No decoded cover: a flat block keeps the slot intentional and needs
+        // no per-frame gradient.
         let p = ui.painter();
-        let clip = p.with_clip_rect(rect);
-        clip.rect_filled(rect, radius, app_theme.scheme.surface_container_high);
-        let radius_px = rect.width().min(rect.height()) * 0.45;
-        clip.circle_filled(
-            rect.center() + egui::Vec2::new(-rect.width() * 0.22, -rect.height() * 0.28),
-            radius_px * 1.15,
-            Color32::from_rgba_unmultiplied(
-                app_theme.scheme.primary.r(),
-                app_theme.scheme.primary.g(),
-                app_theme.scheme.primary.b(),
-                54,
-            ),
-        );
-        clip.circle_filled(
-            rect.center() + egui::Vec2::new(rect.width() * 0.26, rect.height() * 0.3),
-            radius_px * 0.9,
-            Color32::from_rgba_unmultiplied(
-                app_theme.scheme.tertiary.r(),
-                app_theme.scheme.tertiary.g(),
-                app_theme.scheme.tertiary.b(),
-                40,
-            ),
-        );
+        p.rect_filled(rect, radius, app_theme.scheme.surface_container_high);
         paint_icon(
             p,
             rect.center(),
@@ -273,6 +242,8 @@ pub fn art_or_placeholder(
             app_theme.scheme.on_surface_variant,
         );
     }
+    ui.painter()
+        .rect_stroke(rect, radius, app_theme.hairline(), StrokeKind::Inside);
 }
 
 /// Composable row separator.
@@ -280,12 +251,12 @@ pub fn divider(ui: &mut Ui, app_theme: &Theme) {
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 1.0), egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 0, app_theme.scheme.outline_variant);
+        .rect_filled(rect, 0, app_theme.hairline().color);
 }
 
 /// Stroke used for hovered cards.
 pub fn card_hover_stroke(app_theme: &Theme) -> Stroke {
-    Stroke::new(1.0, app_theme.scheme.outline_variant)
+    Stroke::new(1.0, app_theme.scheme.outline)
 }
 
 #[cfg(test)]

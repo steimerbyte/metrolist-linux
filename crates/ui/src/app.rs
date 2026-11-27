@@ -29,9 +29,9 @@ use crate::services::{Services, UiEvent};
 use crate::settings_store::SettingsPaths;
 use crate::shell::{self, MiniAction, NavAction, TopAction};
 use crate::state::{
-    merge_feed, AccountState, BrowseTarget, DownloadsState, FilterChoice, HistoryPending, LibTab,
-    LibraryState, Load, LocalPlaylistState, PageData, PageState, PlayerExtras, RecognitionState,
-    SearchState, StatsState, TogetherState,
+    home_sections, merge_feed, AccountState, BrowseTarget, DownloadsState, FilterChoice,
+    HistoryPending, LibTab, LibraryState, Load, LocalPlaylistState, PageData, PageState,
+    PlayerExtras, RecognitionState, SearchState, StatsState, TogetherState,
 };
 use crate::theme::{install_fonts, Theme};
 use crate::widgets::Toasts;
@@ -82,6 +82,8 @@ pub struct App {
     enter_from_x: f32,
     tab: Tab,
     home: Load<HomeFeed>,
+    /// Every shelf the current page offers, unfiltered, for the settings chips.
+    home_sections: Vec<(String, String)>,
     home_chip: Option<usize>,
     search: SearchState,
     page: PageState,
@@ -144,6 +146,8 @@ pub struct App {
     /// popovers) on that frame, so the capture waits one motion duration.
     idle_since: Option<f64>,
     smoke_reported: bool,
+    /// Smoke-run frame deltas in ms; printed as the worst-gap report.
+    smoke_dts: Vec<f32>,
     open_play: bool,
     last_played_id: Option<String>,
     radio_for: Option<String>,
@@ -295,7 +299,9 @@ impl App {
             settings.reduce_motion,
         );
         let demo = options.demo;
-        services.load_home();
+        if demo != Some(DemoMode::Loading) {
+            services.load_home(settings.home.clone());
+        }
         if search.query.is_empty() {
             search.submitted = String::new();
         }
@@ -314,6 +320,7 @@ impl App {
             enter_from_x: 0.0,
             tab: Tab::Home,
             home,
+            home_sections: Vec::new(),
             home_chip: None,
             search,
             page: PageState::default(),
@@ -374,6 +381,7 @@ impl App {
             screenshot_idle_frames: 0,
             idle_since: None,
             smoke_reported: false,
+            smoke_dts: Vec::new(),
             open_play: false,
             last_played_id: None,
             radio_for: None,
@@ -384,6 +392,7 @@ impl App {
             app.toasts.push(note);
         }
         match demo {
+            Some(DemoMode::Loading) => app.home.loading = true,
             Some(DemoMode::Player) => {
                 app.player_open = true;
                 app.start_player_demo();
@@ -402,7 +411,7 @@ impl App {
                 app.demo_lyrics_pending = true;
             }
             Some(DemoMode::Library) => app.switch_tab(Tab::Library),
-            Some(DemoMode::Settings) => app.navigate(Route::Settings),
+            Some(DemoMode::Settings | DemoMode::SettingsHome) => app.navigate(Route::Settings),
             Some(DemoMode::SettingsAudio) => app.navigate(Route::Settings),
             Some(DemoMode::History) => app.navigate(Route::History),
             Some(DemoMode::Liked) => app.navigate(Route::Liked),
@@ -590,6 +599,7 @@ impl App {
                     if !self.home.more_loading {
                         continue;
                     }
+                    let feed = ml_innertube::pages::home::filter(feed, &self.settings.home);
                     let continuation = feed.continuation.clone();
                     if let Some(home) = self.home.data.as_mut() {
                         merge_feed(home, feed);
@@ -1007,10 +1017,14 @@ impl App {
                     let current = self.snapshot.current.as_ref().map(|song| song.id.as_str());
                     if current == Some(video_id.as_str()) {
                         self.playback_error = Some(message.clone());
-                        // Stop so the transport stops claiming "loading"; Play retries.
+                        // Stop so the transport stops claiming "loading"; Retry reloads.
                         self.services.stop();
+                        // The open player carries the reason inline; a toast on
+                        // top of it duplicates the same failure.
+                        if !self.player_open {
+                            self.toasts.push(message);
+                        }
                     }
-                    self.toasts.push(message);
                 }
             }
         }
@@ -1019,6 +1033,8 @@ impl App {
     fn apply_core_event(&mut self, event: AppEvent) {
         match event {
             AppEvent::HomeLoaded(feed) => {
+                self.home_sections = home_sections(&feed);
+                let feed = ml_innertube::pages::home::filter(feed, &self.settings.home);
                 let continuation = feed.continuation.clone();
                 self.home.finish(feed);
                 self.home.more = continuation;
@@ -1140,7 +1156,9 @@ impl App {
                 }
                 ml_audio::ControllerEvent::Error(message) => {
                     self.playback_error = Some(message.clone());
-                    self.toasts.push(message);
+                    if !self.player_open {
+                        self.toasts.push(message);
+                    }
                 }
                 ml_audio::ControllerEvent::DeviceChanged {
                     fallback_from: Some(from),
@@ -1997,7 +2015,7 @@ impl App {
                 if let Some(data) = self.home.data.as_ref() {
                     let _ = data.sections.len();
                 }
-                self.services.load_home();
+                self.services.load_home(self.settings.home.clone());
             }
             Route::Search => self.submit_search(),
             Route::Album { id } => {
@@ -2365,6 +2383,7 @@ impl App {
         if matches!(
             action,
             player::PlayerAction::TogglePlay
+                | player::PlayerAction::Retry
                 | player::PlayerAction::Next
                 | player::PlayerAction::Previous
                 | player::PlayerAction::Seek(_)
@@ -2377,7 +2396,7 @@ impl App {
         }
         match action {
             player::PlayerAction::None => {}
-            player::PlayerAction::TogglePlay => {
+            player::PlayerAction::TogglePlay | player::PlayerAction::Retry => {
                 self.playback_error = None;
                 self.services.toggle_play();
             }
@@ -2837,6 +2856,7 @@ impl App {
                 let focus_playback = demo_settings && width < 800.0;
                 let focus_sleep = demo_settings && !focus_playback;
                 let focus_audio = matches!(self.demo, Some(DemoMode::SettingsAudio));
+                let focus_home = matches!(self.demo, Some(DemoMode::SettingsHome));
                 let focus_integrations = self.frames < 2
                     && matches!(
                         self.demo,
@@ -2860,10 +2880,12 @@ impl App {
                     &mut self.settings,
                     SettingsStatus {
                         extras: &mut self.extras,
+                        home_sections: &self.home_sections,
                         crossfade_available,
                         focus_playback,
                         focus_sleep,
                         focus_audio,
+                        focus_home,
                         image_cache: cache,
                         image_cache_bytes: cache_bytes,
                         db_path: &db_path,
@@ -2938,6 +2960,10 @@ impl App {
         for action in actions {
             match action {
                 SettingsAction::Changed => changed = true,
+                SettingsAction::HomeViewChanged => {
+                    changed = true;
+                    self.services.load_home(self.settings.home.clone());
+                }
                 SettingsAction::ClearImageCache => {
                     self.art.clear();
                     self.toasts.push("Image cache cleared");
@@ -3392,6 +3418,7 @@ impl App {
                 song: current.as_ref(),
                 playing: snapshot.is_playing(),
                 status,
+                error: self.playback_error.as_deref(),
                 position_ms: snapshot.position_ms,
                 duration_ms: snapshot.duration_ms,
                 shuffle: snapshot.shuffle,
@@ -3517,6 +3544,8 @@ impl App {
                     }
                     Some(DemoMode::Library | DemoMode::History) => self.library.data.data.is_some(),
                     Some(DemoMode::Liked) => self.liked_songs.data.is_some(),
+                    Some(DemoMode::SettingsHome) => self.home.data.is_some(),
+                    Some(DemoMode::Loading) => self.home.initial_loading(),
                     Some(
                         DemoMode::Settings
                         | DemoMode::SettingsAudio
@@ -3607,6 +3636,12 @@ impl App {
                 ctx.request_repaint();
             }
             RunMode::Smoke { frames: max_frames } => {
+                // Smoke requests a repaint every frame, so `stable_dt` is the
+                // measured gap. Frame one spans window creation and is skipped.
+                if self.frames > 1 {
+                    self.smoke_dts
+                        .push(ctx.input(|input| input.stable_dt) * 1000.0);
+                }
                 if self.frames >= max_frames {
                     if !self.smoke_reported {
                         self.smoke_reported = true;
@@ -3620,6 +3655,19 @@ impl App {
                             "SMOKE_OK frames={} backend={} home_sections={}",
                             self.frames, self.backend, sections
                         );
+                        let mut dts = std::mem::take(&mut self.smoke_dts);
+                        dts.sort_by(f32::total_cmp);
+                        if let (Some(min), Some(max)) = (dts.first().copied(), dts.last().copied())
+                        {
+                            let n = dts.len();
+                            let mean = dts.iter().sum::<f32>() / n as f32;
+                            let pct = |q: f32| dts[(((n - 1) as f32) * q).round() as usize];
+                            println!(
+                                "SMOKE_FRAME dt_ms min={min:.3} p50={:.3} p99={:.3} max={max:.3} mean={mean:.3}",
+                                pct(0.5),
+                                pct(0.99)
+                            );
+                        }
                         self.exit(0);
                     }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -3767,7 +3815,7 @@ impl eframe::App for App {
         if self.queue_open {
             self.queue_overlay(&ctx, queue_t);
         }
-        self.toasts.show(&ctx, &self.theme);
+        self.toasts.show(&ctx, &self.theme, self.player_open);
         self.after_frame(&ctx);
     }
 }

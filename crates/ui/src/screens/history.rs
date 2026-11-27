@@ -9,7 +9,7 @@ use crate::pure::group_starts;
 use crate::services::Services;
 use crate::state::{LibraryData, Load};
 use crate::theme::{Theme, DP16, DP24, DP8};
-use crate::widgets::{section_header, song_row, SongRowOptions};
+use crate::widgets::{divider, section_header, song_row, SongRowOptions};
 
 use super::{artist_intent, error_block, skeleton_rows, Intent};
 
@@ -89,6 +89,9 @@ pub fn entries_block(
         let end = starts.get(group + 1).copied().unwrap_or(entries.len());
         section_header(ui, theme, &humanize_period(&labels[start]), width, false);
         for index in start..end {
+            if index > start {
+                divider(ui, theme);
+            }
             let song = &entries[index].song;
             let url = song.thumb(160);
             let texture = art.texture(ui.ctx(), services, &url);
@@ -133,11 +136,12 @@ pub fn entries_block(
 }
 
 fn humanize_period(label: &str) -> String {
-    match label {
-        "today" => "Today".to_string(),
-        "yesterday" => "Yesterday".to_string(),
-        "this_week" => "This week".to_string(),
-        "last_week" => "Last week".to_string(),
-        other => other.to_string(),
-    }
+    let text = match label {
+        "today" => "Today",
+        "yesterday" => "Yesterday",
+        "this_week" => "This week",
+        "last_week" => "Last week",
+        other => other,
+    };
+    text.to_ascii_uppercase()
 }

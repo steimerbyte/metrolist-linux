@@ -19,10 +19,15 @@ the URL above; the port's own source must be offered under GPL-3.0-only.
 
 Bundled assets
 --------------
-- Roboto Regular/Medium/Bold (assets/fonts/): Copyright 2011 Google Inc.
-  SIL Open Font License 1.1, assets/fonts/OFL-1.1-Roboto.txt.
+- Space Grotesk Regular/Medium (assets/fonts/): Copyright 2018 The Space
+  Grotesk Project Authors. SIL Open Font License 1.1,
+  assets/fonts/OFL-SpaceGrotesk.txt.
 - Material Symbols Rounded (assets/fonts/): Copyright Google LLC.
   Apache License 2.0, assets/fonts/Apache-2.0-MaterialSymbols.txt.
+- Doto Bold (assets/fonts/): Copyright 2024 The Doto Project Authors.
+  SIL Open Font License 1.1, assets/fonts/OFL-Doto.txt.
+- Space Mono Regular (assets/fonts/): Copyright 2016 The Space Mono Project
+  Authors. SIL Open Font License 1.1, assets/fonts/OFL-SpaceMono.txt.
 - Translations (assets/i18n/): derived from the upstream Metrolist Android
   resources and therefore covered by GPL-3.0-only.
 - Application icons (assets/icons/): original artwork created for this port,

@@ -302,6 +302,9 @@ pub enum SectionKind {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HomeSection {
     pub title: String,
+    /// Browse id the shelf header links to; `None` when the shelf has none.
+    #[serde(default)]
+    pub id: Option<String>,
     #[serde(default)]
     pub items: Vec<YtItem>,
     pub continuation: Option<String>,
