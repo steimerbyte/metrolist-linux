@@ -12,7 +12,7 @@ Fresh capture of the Nothing redesign; source reviewed, nothing fabricated.
 | No Material 3 dependency | `grep -c material-colors Cargo.lock` | 0 |
 | Boot overlay | `cargo`-free proof in `docs/ui-boot-sequence{,-done}.png`; `BOOT modules=10 total_ms=1760` | shown |
 | Queue covers | `--demo queue` → `docs/ui-queue.png` (405×900) | 40 px covers with 1 px frame; row 3 dithered placeholder: base 26, dots 48, 4 px period |
-| Player waveform | `--demo player` → `docs/ui-waveform.png` (405×900) | 128 bars, 80 dp; played caps near-white (col max ≥180 only left of the played boundary), unplayed ≤26; hover bubble 1:54 at 49 % |
+| Player waveform | `--demo player` → `docs/ui-waveform.png` (405×900) | 103 bars at a 3 dp pitch (2 dp wide, 1 empty column each), band x 48…355; 0 columns with an internal gap >2 px (max 1 px); played 28 bars, cap 232, body 128-148; unplayed cap 153, body ≤81; pointer x=200 of 48…355 → bubble 1:54 (49 %) |
 
 Contrast (WCAG 2.1, computed from the palette, not sampled from pixels):
 

@@ -60,7 +60,7 @@ dist/SHA256SUMS
 ```text
 dist/Metrolist-Desktop-0.1.3-x86_64.AppImage
 size:   121031160 bytes
-sha256: 19307f8a6a8bf7e4359ced4bb0076871dee0419da16900d47f7fe2b690c91894
+sha256: 5a9414a70481d3f8ae9f89010f29893b297afece1d259a827025f423f29c384c
 app:    max GLIBC_2.35 (container build)
 mpv:    0.35.1, max GLIBC_2.34
 ```
@@ -75,8 +75,8 @@ GLIBC floor. `dist/SNAPSHOT.txt` records the checks, mpv bundle and runtime
 dependencies.
 
 The manifest is packaging provenance, not the proof freeze. After the
-home-view work (2026-11-27) the working tree is **273 files**, self-sha
-`e141df46ddb150bd1f8b6b53770d0506e3f2286519a42b8a9b6f49ef6a4cca09`, and
+home-view work (2026-11-27) the working tree is **275 files**, self-sha
+`ffc154e9657202900c5727e868a7959629fe42c849707f6ba35425241f193d8d`, and
 `sha256sum -c --quiet docs/SOURCE-FREEZE.sha256` exits 0. No release artifact was
 rebuilt, so the 0.1.3 numbers above still describe the 247-file release tree.
 

@@ -7,23 +7,30 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, CursorIcon, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, CursorIcon, Id, Pos2, Rect, Sense, Ui, Vec2};
 use egui::WidgetInfo;
 use ml_core::format_position;
 
 use super::{dither_bar, seek_bubble, seek_gesture, ProgressSliderResponse};
 use crate::theme::Theme;
 
-/// Bars per waveform: the reference sits at 120–160.
-pub const BINS: usize = 128;
+/// Bar pitch: a 2 dp bar with a 1 dp gap. The bar count follows the width;
+/// the reference's 120–160 bins only fit a 360–480 dp band at this pitch.
+pub const PITCH: f32 = 3.0;
+/// Width of one bar.
+const BAR_WIDTH: f32 = 2.0;
 /// Waveform band height in dp.
 pub const WAVE_HEIGHT: f32 = 80.0;
 /// Played bars: the design rule's upper dither bound.
 const PLAYED_STRENGTH: f32 = 0.3;
 /// Unplayed bars stay visible but recede.
 const UNPLAYED_STRENGTH: f32 = 0.2;
-/// Shortest bar so quiet passages still show a dotted line.
-const MIN_BAR: f32 = 8.0;
+/// Shortest bar so quiet passages still show a line.
+const MIN_BAR: f32 = 6.0;
+/// Base fill of a bar: the column must read end to end, the dither is texture
+/// inside it, not its replacement.
+const PLAYED_BASE: f32 = 0.55;
+const UNPLAYED_BASE: f32 = 0.4;
 
 /// Seek control drawn as a dithered bar waveform. Returns the same response
 /// shape as the line slider it replaces.
@@ -38,16 +45,27 @@ pub fn waveform_slider(
     let (rect, mut response) =
         ui.allocate_exact_size(Vec2::new(width, WAVE_HEIGHT), Sense::click_and_drag());
     let gesture = seek_gesture(ui, &mut response, position_ms, duration_ms, rect);
-    let bars = wave_bars(ui.ctx(), song_id);
+    let bins = bins_for_width(rect.width());
+    let bars = wave_bars(ui.ctx(), song_id, bins);
     let painter = ui.painter();
-    let bins = bars.len();
-    let pitch = rect.width() / bins as f32;
-    let bar_width = (pitch * 0.6).max(1.0);
+    // Integer edges: a half-pixel bar grew to three feathered columns and the
+    // 1 dp gaps lit up at 15 % grey.
+    let left = rect.left().round();
+    let center = rect.center().y.round();
     for (index, amplitude) in bars.iter().enumerate() {
-        let x = rect.left() + (index as f32 + 0.5) * pitch;
-        let height = MIN_BAR + amplitude * (rect.height() - MIN_BAR);
-        let bar = Rect::from_center_size(Pos2::new(x, rect.center().y), Vec2::new(bar_width, height));
+        let x = left + index as f32 * PITCH;
+        let height = (MIN_BAR + amplitude * (rect.height() - MIN_BAR)).round();
+        let top = center - (height / 2.0).round();
+        let bar = Rect::from_min_max(Pos2::new(x, top), Pos2::new(x + BAR_WIDTH, top + height));
         let played = bin_is_played(index, bins, gesture.shown);
+        // A continuous column carries the amplitude; the dot texture rides on
+        // top of it. A dither-only 2 dp bar fell apart into single dots.
+        let base = if played {
+            app_theme.scheme.on_surface.gamma_multiply(PLAYED_BASE)
+        } else {
+            app_theme.scheme.on_surface_variant.gamma_multiply(UNPLAYED_BASE)
+        };
+        painter.rect_filled(bar, 0, base);
         dither_bar(
             painter,
             bar,
@@ -57,18 +75,21 @@ pub fn waveform_slider(
                 UNPLAYED_STRENGTH
             },
         );
-        // 1-px cap: at 1.5 dp the dotted column alone would disappear in the
-        // unplayed strength, so the top edge carries the bar's colour.
-        painter.line_segment(
-            [bar.left_top(), bar.right_top()],
-            Stroke::new(
-                1.0,
-                if played {
-                    app_theme.scheme.on_surface
-                } else {
-                    app_theme.scheme.outline_variant
-                },
-            ),
+        // 1-px caps top and bottom: crisp ends instead of a frayed texture edge.
+        let cap = if played {
+            app_theme.scheme.on_surface
+        } else {
+            app_theme.scheme.on_surface_variant
+        };
+        painter.rect_filled(
+            Rect::from_min_max(bar.left_top(), Pos2::new(bar.right(), bar.top() + 1.0)),
+            0,
+            cap,
+        );
+        painter.rect_filled(
+            Rect::from_min_max(Pos2::new(bar.left(), bar.bottom() - 1.0), bar.right_bottom()),
+            0,
+            cap,
         );
     }
     if let Some((pointer, preview_ms)) = gesture.hover {
@@ -94,18 +115,23 @@ pub fn waveform_slider(
     }
 }
 
+/// Bars that fit the band at the 3 dp pitch (2 dp bar + 1 dp gap).
+pub fn bins_for_width(width: f32) -> usize {
+    ((width / PITCH).floor() as usize).clamp(1, 160)
+}
+
 /// Bars left of the played fraction.
 pub fn bin_is_played(index: usize, bins: usize, shown: f32) -> bool {
     bins > 0 && (index as f32) < shown * bins as f32
 }
 
-/// Bar heights for `song_id`, cached per context: one build per track.
-fn wave_bars(ctx: &egui::Context, song_id: &str) -> Arc<Vec<f32>> {
-    let id = Id::new(("waveform-bars", song_id));
+/// Bar heights for `song_id`, cached per context: one build per track/width.
+fn wave_bars(ctx: &egui::Context, song_id: &str, bins: usize) -> Arc<Vec<f32>> {
+    let id = Id::new(("waveform-bars", song_id, bins));
     if let Some(bars) = ctx.data(|data| data.get_temp::<Arc<Vec<f32>>>(id)) {
         return bars;
     }
-    let bars = Arc::new(generate_bars(song_id, BINS));
+    let bars = Arc::new(generate_bars(song_id, bins));
     ctx.data_mut(|data| data.insert_temp(id, bars.clone()));
     bars
 }
@@ -172,15 +198,26 @@ mod tests {
     }
 
     #[test]
+    fn bins_follow_the_three_dp_pitch() {
+        // 330 dp band (405 px window): 110 bars of 2 dp + 1 dp gap.
+        assert_eq!(bins_for_width(330.0), 110);
+        assert_eq!(bins_for_width(331.5), 110);
+        assert_eq!(bins_for_width(460.0), 153);
+        assert_eq!(bins_for_width(1.0), 1);
+        assert_eq!(bins_for_width(10_000.0), 160);
+    }
+
+    #[test]
     fn bars_are_deterministic_and_seeded() {
-        let a = generate_bars("oWqnJdGy_84", BINS);
-        let b = generate_bars("oWqnJdGy_84", BINS);
+        let bins = bins_for_width(330.0);
+        let a = generate_bars("oWqnJdGy_84", bins);
+        let b = generate_bars("oWqnJdGy_84", bins);
         assert_eq!(a, b, "same song, same bars");
-        assert_eq!(a.len(), BINS);
+        assert_eq!(a.len(), bins);
         assert!(a.iter().all(|value| *value > 0.0 && *value <= 1.0));
         let peak = a.iter().copied().fold(0.0f32, f32::max);
         assert!((peak - 1.0).abs() < 1e-4, "peak normalised: {peak}");
-        assert_ne!(a, generate_bars("another-song", BINS));
+        assert_ne!(a, generate_bars("another-song", bins));
     }
 
     #[test]
