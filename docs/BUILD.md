@@ -104,6 +104,23 @@ packaging/build-appimage.sh --container`; builder `rust:1.99.1-bookworm`
 container DNS could not reach `deb.debian.org`), mpv bundle reused from
 `build/mpv-bundle`. The host binary stays a development reference only.
 
+## Validated artifact (2026-11-27, v0.1.5)
+
+```text
+dist/Metrolist-Desktop-0.1.5-x86_64.AppImage
+size:   120,285,688 bytes
+sha256: 3b5d4d3eb3ed515cc8ae52babcd2d9de4924d9471c50f374f3595760d45d9632
+app:    max GLIBC 2.35
+mpv:    0.35.1, max GLIBC 2.34
+```
+
+Built from the tree frozen in `docs/SOURCE-FREEZE.sha256` (275 files,
+self-sha `f19ad847…`) with `MPV_BUNDLE_REUSE=1
+packaging/build-appimage.sh --container`; builder `rust:1.99.1-bookworm`
+(local copy with `libasound2-dev`; the default container DNS cannot reach
+`deb.debian.org`), mpv bundle reused from `build/mpv-bundle`. The host binary
+stays a development reference only.
+
 Equivalent explicit commands:
 
 ```sh

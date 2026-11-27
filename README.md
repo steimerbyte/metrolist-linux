@@ -113,31 +113,47 @@ interfaces and per-workstream ownership.
 
 ## AppImage
 
-`dist/Metrolist-Desktop-0.1.4-x86_64.AppImage` — 120,285,688 bytes (114.7 MiB),
+`dist/Metrolist-Desktop-0.1.5-x86_64.AppImage` — 120,285,688 bytes (114.7 MiB),
 AppImage type 2 (runtime commit `fedfad5`), built 2026-11-27 in
 `rust:1.99.1-bookworm` from the tree frozen in `docs/SOURCE-FREEZE.sha256`
-(275 files, self-sha256 `78e714e6…`) with the Debian bookworm mpv
+(275 files, self-sha256 `f19ad847…`) with the Debian bookworm mpv
 bundle (`build/mpv-bundle`). Published as
-[v0.1.4](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.4).
+[v0.1.5](https://github.com/steimerbyte/metrolist-linux/releases/tag/v0.1.5).
 
 ```text
-sha256  b31088c6b0aed5a42097d1e718878323bccbf55fc449601f0c6bf4c2e51317ee
+sha256  3b5d4d3eb3ed515cc8ae52babcd2d9de4924d9471c50f374f3595760d45d9632
 ```
 
 ```sh
 cd dist && sha256sum -c SHA256SUMS
-# Metrolist-Desktop-0.1.4-x86_64.AppImage: OK
+# Metrolist-Desktop-0.1.5-x86_64.AppImage: OK
 ```
 
 ```sh
 chmod +x dist/Metrolist-Desktop-*-x86_64.AppImage
 ./dist/Metrolist-Desktop-*-x86_64.AppImage
 # or install it for the desktop (the layout used for release verification):
-mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.4-x86_64.AppImage \
+mkdir -p ~/AppImages && cp dist/Metrolist-Desktop-0.1.5-x86_64.AppImage \
   ~/AppImages/metrolist_desktop.appimage && chmod 755 ~/AppImages/metrolist_desktop.appimage
 ```
 
-The 0.1.3 artifact (121,031,160 bytes, sha256 `19307f8a6a8b…`) stays at its tag.
+The 0.1.4 artifact (120,285,688 bytes, sha256 `b31088c6…`) and the earlier
+ones stay at their tags.
+
+### What changed in 0.1.5
+
+- **Button motion** — every click target animates: hover state layer 150 ms,
+  press scale 0.98 with content alpha 255→230 (90 ms in, 150 ms out), chip/nav/
+  active selection 200 ms, play/pause swap 100 ms. Reduced motion snaps.
+- **Coverage** — icon/filled/outlined/PLAY ALL buttons, the player play pill,
+  transport pills, like heart, shuffle/repeat dot, bottom nav and rail, queue
+  and Listen Together rows, sort menu, liked tile, discover and album cards,
+  statistics rows, song-row download/radio/artist actions, settings chips and
+  the top-bar avatar.
+- **No layout change** — allocations and hit rects are unchanged; press is
+  paint-only (draw rect scaled about the centre, content alpha), no blur.
+- **Font cost** — the nav label keeps its font size while pressed; the icon
+  carries the scale, so no glyph re-rasterisation.
 
 ### What changed in 0.1.4
 

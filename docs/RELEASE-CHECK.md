@@ -7,8 +7,8 @@ Verdict: **RELEASE READY**.
   workspace version `0.1.3`.
 - Workspace: `crates/{core,innertube,lyrics,store,downloads,audio,integrations,ui}`,
   binary `metrolist` (`crates/ui/src/main.rs`).
-- The v0.1.2 and v0.1.3 records below are historical; the v0.1.4 record is
-  the section at the end of this file. v0.1.1 and v0.1.0
+- The v0.1.2-v0.1.4 records below are historical; the v0.1.5 record is the
+  section at the end of this file. v0.1.1 and v0.1.0
   remain published at their tags.
 
 ## Gate commands
@@ -411,3 +411,28 @@ packages bumped in `Cargo.lock`, one stale `ml-innertube` edge removed from
 The 0.1.4 changes are the boot overlay, the configurable home feed, the
 stream shim, the queue covers and the player waveform; the v0.1.3 gate above
 stays historical and is not re-run.
+
+# Release check — 2026-11-27 (v0.1.5)
+
+Release gate for the 0.1.5 AppImage (workspace version `0.1.5`; 11 `ml-*`
+packages bumped in `Cargo.lock`). Verdict: **RELEASE READY**.
+
+- Artifact: `dist/Metrolist-Desktop-0.1.5-x86_64.AppImage`, 120,285,688 bytes,
+  sha256 `3b5d4d3eb3ed515cc8ae52babcd2d9de4924d9471c50f374f3595760d45d9632`, max GLIBC 2.35 (app), 2.34 (bundled mpv 0.35.1).
+- Builder: `packaging/build-appimage.sh --container` on
+  `rust:1.99.1-bookworm` (local copy with `libasound2-dev`; the container DNS
+  cannot reach `deb.debian.org`), mpv bundle reused (`MPV_BUNDLE_REUSE=1`).
+- The host has no `cargo` on PATH by repo policy; the checks below ran on the
+  direct rustc chain, the test binary and the new AppImage.
+
+| Command | Result |
+|---|---|
+| `ml_ui` unit tests | **122 passed, 0 failed** |
+| `proofs/run-gates.sh` | **12/12 PASS** — 297 verified, 0 errors; `check-drift.sh` 21/21; review signed |
+| `blaze check` | exit 1, 0 own errors — 1594 items outside the checkable set (foreign heads `image_webp`, `zbus`) |
+| `dist/Metrolist-Desktop-0.1.5-x86_64.AppImage --smoke 120` | exit 0, `SMOKE_FRAME` p50 6.9 ms (60 Hz vsync) |
+| `sha256sum -c dist/SHA256SUMS` | `Metrolist-Desktop-0.1.5-x86_64.AppImage: OK` |
+
+The 0.1.5 change is the button-motion sweep (tokens, asymmetric press ramp,
+content dimming, play/pause at 100 ms); layout and hit rects are untouched.
+The v0.1.4 gate above stays historical and is not re-run.
